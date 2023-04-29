@@ -16,7 +16,6 @@
 
 
 
-
 void die(char *s, int e){
 	
 	if(s != NULL)
@@ -48,6 +47,7 @@ void DisconnectUser(int p){
 }
 
 
+
 void QueueByteOut(int p, unsigned char v){
 
 	players[p].dout[players[p].dout_count++] = v;
@@ -67,6 +67,43 @@ void ChangeRoom(int p, int r){
 	players[p].room = r;
 	/* TODO cancel existing subscriptions? */
 }
+
+
+
+void *EmulatorContainer(void *arg){
+	char pbuf[512];
+	FILE *f = fopen("data/bot-uers.txt", "r");
+	sprintf(pbuf, "cuzebox/cuzebox \"$s\"", rom);
+
+	
+	FILE *p = popen(pbuf, "r");
+	char c;
+	while(1){
+		c = fgetc(p);
+		if(c == EOF || c == 0)
+			break;
+		fflush(p);
+	}
+	pthread_join(((EmuInst_t *)arg)->handle, NULL);
+}
+
+
+
+int LaunchEmulator(char *rom){
+	int i;
+	for(i = 0;i < MAX_EMULATOR;i++){
+		if(emulators[i].state == EMULATOR_STOPPED){
+			int perr = pthread_create(&emulators[i].handle, NULL, EmulatorContainer, (void *)(&emulators[i]));
+			if(perr)
+				printf("ERROR failed to create emulator thread %d\n", i);
+			else
+				emulators[i].state = EMULATER_RUNNING;
+			return;
+		}
+	}
+}
+
+
 
 int UpdateRoom(int r){ /* each room is responsible for updating itself, as well as all it's players */
 

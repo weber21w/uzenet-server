@@ -20,7 +20,19 @@ char *banner = "\n"
 "| ▒▓▒ ▒ ░░ ▒░ ░ ▒▓ ░▒▓░   ░ ▐░  ░░ ▒░░▒▓ ░▒▓░|\n"
 "[=====░====░=░===░=====V0.8==░=====░==░===░==]\n\n";
 
+#define MAX_EMULATORS		256
+#define EMULATER_STOPPED	0
+#define EMULATER_RUNNING	1
+#define EMULATER_CLOSING	2
 
+typedef struct{
+	pthread_t handle;
+	int room;
+	int state;
+
+}EmuInst_t;
+
+EmuInst_t emulators[MAX_EMULATORS];
 
 #define USER_KEY_LEN	9 /* this number based on EEPROM limitations */
 #define USER_LONG_KEY_LEN	256
