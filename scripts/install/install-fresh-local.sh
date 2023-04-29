@@ -50,7 +50,7 @@ ExecStart=/home/uzenet/uns/uns
 WantedBy=multi-user.target
 ' | sudo tee '/etc/systemd/system/uzenet-server.service'
 
-systemctl enable ethtool #enable uzenet server to run at boot
+systemctl enable uzenet-server #enable uzenet server to run at boot
 sudo systemctl start uzenet-server #start immediately
 
 
