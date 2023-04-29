@@ -1,6 +1,6 @@
 #!/bin/bash
 cd $(dirname $0)
-cd ~/scripts/install
+#cd ~/uns/scripts/install
 REMOTE_HOST="$1"
 REMOTE_USER="$2"
 REMOTE_PASS="$3"

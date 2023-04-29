@@ -32,13 +32,14 @@ if [[ ! "$RES" == *'installed'* ]]; then echo "**NEED SUDO TO INSTALL [sshpass]*
 
 ########Install UNS########
 wget -O uns-latest.zip ${UNS_GITHUB_URL}
-unzip uns-latest.zip
+unzip -o uns-latest.zip #overwrite existing
 rm uns-latest.zip
 mv *uze* uns #make standard name
 cd uns
 make
 
 #create a systemd service at boot
+echo "**NEED SUDO TO INSTALL [uzenet-server]**"; sudo echo "";
 echo '
 [Unit]
 Description=Uzenet Server
@@ -59,7 +60,7 @@ sudo systemctl start uzenet-server #start immediately
 rm -r *cuze* #get rid of any old stuff
 
 wget -O cuzebox-latest.zip ${CUZEBOX_GITHUB_URL}
-unzip cuzebox-latest.zip
+unzip -o cuzebox-latest.zip #overwrite existing
 
 rm cuzebox-latest.zip
 mv *cuze* cuzebox #make standard name
@@ -76,7 +77,7 @@ cd ~
 RES=$(dpkg -s caddy)
 if [[ "$RES" == *'installed'* ]]; then sudo systemctl stop caddy; sudo apt remove -y caddy; fi
 
-echo "**NEED SUDO TO INSTALL [caddy]**"; sudo echo ""; fi
+echo "**NEED SUDO TO INSTALL [caddy]**"; sudo echo "";
 sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
