@@ -40,7 +40,7 @@ make
 
 #create a systemd service at boot
 echo "**NEED SUDO TO INSTALL [uzenet-server]**"; sudo echo "";
-echo '
+sudo echo '
 [Unit]
 Description=Uzenet Server
 
