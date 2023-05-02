@@ -25,6 +25,58 @@ char *banner = "\n"
 #define EMULATER_RUNNING	1
 #define EMULATER_CLOSING	2
 
+
+
+
+#define UN_CMD_NULL			0//0x00:(NULL, as a command this will cause the server to disconnect assumed as error)
+#define UN_CMD_HEADER_START		1//0x01:(start of header)
+#define UN_CMD_TEXT_START		2//0x02:(start of text)
+#define UN_CMD_TEXT_END		3//0x03:(end of text)
+#define UN_CMD_TX_END			4//0x04:(end of transmission)disconnects from the server
+#define UN_CMD_ENQUIRY			5//0x05:(enquiry)
+#define UN_CMD_ACKNOWLEDGE		6//0x06:(acknowledge)
+#define UN_CMD_BELL			7//0x07:(bell)
+#define UN_CMD_BACKSPACE		8//0x08:(backspace)
+#define UN_CMD_HORIZONTAL_TAB		9//0x09:(horizontal tab)
+#define UN_CMD_LINE_FEED		10//0x0A:(line feed)
+#define UN_CMD_VERTICAL_TAB		11//0x0B:(vertical tab)
+#define UN_CMD_FORM_FEED		12//0x0C:(form feed)
+#define UN_CMD_CARRIAGE_RETURN	13//0x0D:(carriage return)
+#define UN_CMD_SHIFT_OUT		14//0x0E:(shift out)
+#define UN_CMD_SHIFT_IN		15//0x0F:(shift in)
+#define UN_CMD_DATA_LINK_ESCAPE	16//0x10:(data link escape)
+#define UN_CMD_DEVICE_CONTROL1	17//0x11:(device control 1)
+#define UN_CMD_DEVICE_CONTROL2	18//0x12:(device control 2)
+#define UN_CMD_DEVICE_CONTROL3	19//0x13:(device control 3)
+#define UN_CMD_DEVICE_CONTROL4	20//0x14:(device control 4)
+#define UN_CMD_NEGATIVE_ACKNOWLEDGE	21//0x15:(negative acknowledge)
+#define UN_CMD_SYNCHRONIZE		22//0x16:(synchronize)
+#define UN_CMD_END_OF_TX_BLOCK	23//0x17:(end of transmission block)
+#define UN_CMD_CANCEL			24//0x18:(cancel)
+#define UN_CMD_END_OF_MEDIUM		25//0x19:(end of medium)
+#define UN_CMD_SUBSTITUTE		26//0x1A:(substitute)
+#define UN_CMD_ESCAPE			27//0x1B:(escape)
+#define UN_CMD_FILE_SEPARATOR		28//0x1C:(file separator)
+#define UN_CMD_GROUP_SEPARATOR	29//0x1D:(group separator)
+#define UN_CMD_RECORD_SEPARATOR	30//0x1E:(record separator)
+#define UN_CMD_UNIT_SEPARATOR		31//0x1F:(unit separator)
+
+#define UN_CMD_ROM_IDENTIFY		32//' '
+#define UN_FONT_SPECIFICATION_COMMON	33//'!'
+#define UN_CMD_FONT_SPECIFY		34//'"'
+#define UN_CMD_CHECK_RSVP		35//'#'
+#define UN_CMD_JOIN_MATCH		36//'$'
+#define UN_CMD_REQ_MATCH_SIMPLE	37//'%'
+
+
+
+
+
+
+
+
+
+
 typedef struct{
 	pthread_t handle;
 	int room;
@@ -34,7 +86,7 @@ typedef struct{
 
 EmuInst_t emulators[MAX_EMULATORS];
 
-#define USER_KEY_LEN	9 /* this number based on EEPROM limitations */
+#define USER_KEY_LEN	8 /* this number based on EEPROM limitations */
 #define USER_LONG_KEY_LEN	256
 #define USER_STORED_DATA_LEN	2048 /* let the user keep some data around, for whatever purposes some advanced game might have */
 #define MAX_PLAYERS	256
@@ -87,13 +139,19 @@ typedef struct{
 	char din[4096];/* data pipeline coming in from client */
 	int din_count;
 	int din_pos;
+	int din_end;
 	char dout[16*1024];/* data going out to client */
 	int dout_count;
 	int dout_pos;
+	int dout_end;
 	int din_total;
+	int dout_total;
+	int idle_time;
 	uint32_t waiting_thread;
 	char temp[128];
 	char filename[128];
+	char font_translate[256];
+	char rom_name[16];
 	long foffset;
 	FILE *file;
 	char fblock;
@@ -284,3 +342,7 @@ void DisconnectUser(int p);
 void UpdatePlayer(int p);
 int UpdateRoom(int r);
 int LoadUsers();
+int FindMatch();
+int JoinMatch(int p, int m);
+
+const char *common_fontset=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]???ABCDEFGHIJKLMNOPQRSTUVWXYZ?????";

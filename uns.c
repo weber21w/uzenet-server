@@ -71,6 +71,7 @@ void ChangeRoom(int p, int r){
 
 
 void *EmulatorContainer(void *arg){
+/*
 	char pbuf[512];
 	FILE *f = fopen("data/bot-uers.txt", "r");
 	sprintf(pbuf, "cuzebox/cuzebox \"$s\"", rom);
@@ -85,11 +86,13 @@ void *EmulatorContainer(void *arg){
 		fflush(p);
 	}
 	pthread_join(((EmuInst_t *)arg)->handle, NULL);
+*/
 }
 
 
 
 int LaunchEmulator(char *rom){
+/*
 	int i;
 	for(i = 0;i < MAX_EMULATOR;i++){
 		if(emulators[i].state == EMULATOR_STOPPED){
@@ -101,6 +104,7 @@ int LaunchEmulator(char *rom){
 			return;
 		}
 	}
+*/
 }
 
 
@@ -152,136 +156,82 @@ void UpdatePlayer(int p){
 			return;
 		}
 
-		if(r > 0){ /* we did get new data? */
+		if(r > 0){ /* we have some received data */
+			/* .din_pos = where we are processing commands from(inclusive) */
+			/* .din_end = the end of data we have available to process(not inclusive) */
+			if(players[p].din_end+r >= sizeof(players[p].din)){ /* overflow, this shouldn't happen, server stalling? */
 
-			if(players[p].din_count+r >= sizeof(players[p].din)){ /* did the player overflow on input(shouldn't happen, we process fast!)? */
-			
-				printf("%s receive buffer overflow. Server stalling?\n", users[players[p].user].name);
+				printf("Player %d[%s] overflowed\n", p, users[players[p].user].name);
 				DisconnectUser(p);
 				return;
-		}
+			}
 
+			packet_buf[r] = '\0';
+			printf("p: %d, recv[%s]\n", p, packet_buf);
+			memcpy(players[p].din+players[p].din_end, packet_buf, r); /* copy the received data at the end of the player's input pipeline */
+			players[p].din_end += r;
+			players[p].din_total += r;
 
-		packet_buf[r] = '\0';
-		printf("p: %d, recv[%s]\n", p, packet_buf);
-		memcpy(players[p].din, packet_buf, r); /* copy the received data into the player's input pipeline */
-		players[p].din_count += r;
-		players[p].din_total += r;
+players[p].din[players[p].din_end] = '\0';
+printf("RX COUNT %d, NOW AT [%s]\n", r, players[p].din+players[p].din_pos);
+printf("TOTAL %d\n", players[p].din_end-players[p].din_pos);
+
 		}
-//		if(players[p].dout_count >= sizeof(players[p].dout)){ /* did the player overflow on output(client not asking for data fast enough!)? */
-			
-//			ServerLog("%s transmit buffer overflow. Client stalling?\n", users[players[p].user].name);
-//			players[p].state = USER_DISCONNECTING;
-//			return;
-//		}
+		players[p].idle_time = 0;
 	}
-		players[p].connection_time++;
-	/* receive data and add it to din[] */
+	players[p].connection_time++;
+
 /***********************************************************************************/
-if(BytesAvailable(p)){
-//	printf("Have data queued[%d]\n", BytesAvailable(p));
-}
+
 	if(players[p].state == USER_CONNECTING){
-printf("hacks %d\n", players[p].din_total);
+
 		players[p].room = 0;
 		players[p].sub_state = 0;
 
-//HACK
-//players[p].connected_at = current_time;
-//players[p].last_activity = current_time;
-//players[p].state = USER_CONNECTED;
-//players[p].din_count = 0;
-//players[p].din_pos = 0;
-//players[p].dout_count = 0;
-//players[p].dout_pos = 0;
-//printf("player logged in\n");
-
-
-		/* players must always indicate whether to host or join a game */
-		/* they must send us exactly 16 bytes which match a user in the database to login */
-		/* they are immediately returned the number of the room they are in(which simple games can discard) */
-		/* the default mode of every room is ROOM_SIMPLE_NETWORKING until changed to something else */
-
-		if(players[p].din_count < USER_KEY_LEN){ /* still waiting for login key data? */
-
-			if(players[p].connection_time > 100000){
-				DisconnectUser(p);
-				return;
-			}
-
-		}else if(players[p].din_count > USER_KEY_LEN){ /* sent too much data for logging in? remove data that might be part of a command output...*/
-
-			if(players[p].din_total > 100){ /* too much spam, not enough password... */
-				printf("user sent too much data without logging in\n");
-				DisconnectUser(p);
-				return;				
-			}
-
-			for(i=0;i<players[p].din_count;i++){ /* remove colons, or things like "+CIPSTAMAC:" */
-				if(players[p].din[i] == ':' || players[p].din[i] == '+' || players[p].din[i] == '\r' || players[p].din[i] == '\n'){
-					for(j = i; j < players[p].din_count; j++)
-						players[p].din[j] = players[p].din[j+1];
-					players[p].din_count--;
-printf("adjusting char\n");
-				}
-			}
-
-			if(!strncmp(players[p].din, "CIPSTAMAC", strlen("CIPSTAMAC"))){ /* for ease of use, some impelementations may just dump the output of "AT+CIPSTAMAC?"*/
-				strcpy(players[p].din, players[p].din+strlen("CIPSTAMAC"));
-				players[p].din_count -= strlen("CIPSTAMAC");
-				printf("adjusting string\n");
-			}
-printf("adjusting user data...\n");
-
-			if(players[p].din_count > USER_KEY_LEN){ /* still too long? then something is broken */
-				DisconnectUser(p);
-				return;
-			}
-			/* TODO maintain an IP Ban List */
-			//ServerLog("ERROR client at %s overflowed before logging in\n", players[p].ipv4s);
-			/* TODO failed_logins++; /* keep track of failed logins, and use a cooldown timer */
-			//DisconnectUser(p);
-
+		if(players[p].connection_time > 100000){
+printf("TOOK TO LONG TO LOG IN\n");
+			DisconnectUser(p);
+			return;
 		}
 
-		if(players[p].din_count == USER_KEY_LEN){ /* provided login key is a valid length, check against registered users in the database */
+		if(players[p].din_end < USER_KEY_LEN) /* still waiting for login key data? */
+			return;
 
-			for(i = 0;i < USER_KEY_LEN; i++) /* convert to capital */
-				players[p].din[i] = toupper(players[p].din[i]);
+		 /* provided login key is a valid length, check against registered users in the database */
+		int valid_pass;
+		for(i = 0;i <= MAX_USERS; i++){
 
-			for(i = 0;i <= MAX_PLAYERS; i++){
-
-				k = i;
-				if(k == MAX_PLAYERS)
+			if(users[i].short_key[0] == 0)
+				continue;
+			valid_pass = 1;
+			for(j = 0;j < USER_KEY_LEN;j++){
+	
+printf("checking key[%c] versus [%c]\n", users[i].short_key[j], players[p].din[j]);
+				if(users[i].short_key[j] != players[p].din[j]){ /* doesn't match unencrypted key */
+					valid_pass = 0;
 					break;
-
-				for(j = 0;j < USER_KEY_LEN;j++){
-
-					if(users[i].short_key[j] != players[p].din[j]){ /* doesn't match unencrypted key */
-						k = MAX_PLAYERS;
-						break;
-					}
-
 				}
-				if(k != MAX_PLAYERS) /* found it? */
-					break;
 			}
-			if(k == MAX_PLAYERS){ /* didn't find a user with that key */
+			if(valid_pass)
+				break;
+		}
+
+		if(!valid_pass){ /* didn't find a user with that key */
 				
-				printf("client gave bad key\b\n");
-				players[p].state = USER_DISCONNECTING;
-			}else{ /*login successful! */
+			printf("client gave bad key\b\n");
+			players[p].state = USER_DISCONNECTING;
+		}else{ /*login successful! */
 printf("LOGGED IN\n");
-				players[p].connected_at = current_time;
-				players[p].last_activity = current_time;
-				players[p].state = USER_CONNECTED;
-				players[p].din_count = 0;
-				players[p].din_pos = 0;
-				players[p].dout_count = 0;
-				players[p].dout_pos = 0;
-			}
+			players[p].din_pos += USER_KEY_LEN;
+			players[p].connected_at = current_time;
+			players[p].last_activity = current_time;
+			players[p].state = USER_CONNECTED;
+			players[p].dout_count = 0;/* there is no response to a successful login, if it wasn't successful, we just disconnect */
+			players[p].dout_pos = 0;
 		}
-	}
+		return;
+	}//if(players[p].state == USER_CONNECTING)
+
 /***********************************************************************************/
 	if(players[p].state == USER_DISCONNECTING){ /* state initially set by DisconnectUser() */
 printf("discoing....\n");
@@ -299,26 +249,95 @@ printf("discoing....\n");
 //////		memset((void *)players[p], 0, sizeof(players[p]));
 		return;
 	}
+
+
+
 /***********************************************************************************/
 //printf("STATE[%d]\n", players[p].state);
 	if(players[p].state == USER_CONNECTED){
-//printf("player connected state\n");
-		if(players[p].dout_pos == players[p].dout_count) /* transmit(to client) buffer empty? */
-			players[p].dout_pos = players[p].dout_count = 0; /* time to reset the non-circular buffer */
 
-		if(players[p].din_pos == players[p].din_count) /* receive(from client) buffer empty? */
-			players[p].din_pos = players[p].din_count = 0; /* reset it, a non-circular buffer is sufficient here and simpler/faster IMO */
+		if(players[p].din_end == players[p].din_pos) /* all processed, reset to beginning of buffer */
+			players[p].din_pos = players[p].din_end = 0;
 
-		/* each player makes requests for a given length of data, at their leisure(but not so slow that dout[] overflows!) */
-		/* all data received from the player is buffered, and processed as soon as possible */
+		if(players[p].delay){
+printf("player delaying...\n");
+			players[p].delay--;
+			return;
+		}
 
+		while(1){ /* is there data to process? could be a message which generates data to send back */
 
-		while(players[p].din_count > players[p].din_pos){ /* is there data to process? could be a message which generates data to send back */
-			
+			int unread = players[p].din_end-players[p].din_pos; /* unprocessed data from the client */
+			int wspace = (sizeof(players[p].dout)-players[p].dout_end)-1; /* buffer left to write back to the client(multibyte responses need to check first) */
+			if(!wspace){ /* something went wrong... */
+				printf("Player %d[%s] response overflow\n", p, users[players[p].user].name);
+				players[p].state = USER_DISCONNECTING;
+				return;
+			}
+			if(!unread)
+				break; /* we may have generated response, send any available data to the client */
+
 			/***********************************************************************************/
 			if(players[p].command == COMMAND_NONE){ /* we expect the next byte to be a command type */
+
 				players[p].command = players[p].din[players[p].din_pos++];
-				printf("P[%d] got new command[%d]\n", p, players[p].command);
+printf("P[%d] got new command[%d] at pos %d\n", p, players[p].command, players[p].din_pos-1);
+printf("NEXT BYTE IS [%c]\n", players[p].din[players[p].din_pos]);
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_ROM_IDENTIFY){
+
+				if(unread < 8) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
+					break;
+
+				memcpy(players[p].rom_name, players[p].din+players[p].din_pos, 8);
+				players[p].rom_name[9] = '\0';
+				players[p].din_pos += 8;
+printf("COPIED ROM NAME [%s]\n", players[p].rom_name);
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_FONT_SPECIFICATION_COMMON){ /* use the common font set, without specifying it(no argument) */
+
+				memcpy(players[p].font_translate, common_fontset, 96);
+printf("DEFAULT FONT\n");
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_FONT_SPECIFY){ /* 96 characters to be used in place of ASCII equivalents(allows chat with partial fontsets) */
+
+				if(unread < 96) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
+					break;
+
+				memcpy(players[p].font_translate, players[p].din+players[p].din_pos, 96);
+				players[p].din_pos += 96;
+printf("COPIED FONT TRANSLATION\n");
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_CHECK_RSVP){ /* checking for a match RVSP(no argument) */
+printf("CHECKED RSVP %d\n", p);
+				memcpy(players[p].font_translate, players[p].din+players[p].din_pos, 96);
+				players[p].dout[players[p].dout_end++] = FindMatch(p);
+printf("MATCH RETURN %d\n", players[p].dout[players[p].dout_end-1]);
+				players[p].requested_bytes++;
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_JOIN_MATCH){ /* requesting to join a match */
+
+				/* we can always assume 1 unread byte is available, see above */
+printf("%d REQUESTED JOIN FOR MATCH %d\n", p, players[p].din[players[p].din_pos]);
+				players[p].dout[players[p].dout_end++] = JoinMatch(p, players[p].din[players[p].din_pos++]);
+printf("MATCH JOIN RETURNED %d\n", players[p].dout[players[p].dout_end-1]);
+				players[p].requested_bytes++;
+				players[p].command = COMMAND_NONE;
+				continue;
 			}
 			/***********************************************************************************/
 			if(players[p].command >= COMMAND_INVALID){ /* we received an unsupported command, assume the client has lost sync */
@@ -331,7 +350,7 @@ printf("discoing....\n");
 			if(players[p].command == COMMAND_BREATHER){ /* client wants a delay before more data is sent */
 				
 				if(BytesAvailable(p) < 1){ /* need the ticks/milliseconds to delay */
-					players[p].delay++; /* since they need a delay(but we don't know how long), just delay until we know for sure to avoid disconnects. */
+					players[p].delay++; /* since they need a delay(but we don't know how long), just keep delaying until we know how long(to avoid disconnects) */
 					break;
 				}
 				players[p].command = COMMAND_NONE;
@@ -455,6 +474,7 @@ printf("discoing....\n");
 			}
 			/***********************************************************************************/
 			if(players[p].command == COMMAND_FLUSH_BUFFER){ /* client wants to discard all current data(presumably to resync) */
+
 				players[p].din_pos = players[p].din_count = 0;
 				players[p].dout_pos = players[p].dout_count = 0;
 				players[p].command = COMMAND_NONE;
@@ -678,7 +698,7 @@ printf("discoing....\n");
 				players[p].command = COMMAND_NONE;
 			}
 			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_ROOM_PASSWORD){
+			if(players[p].command == COMMAND_SET_ROOUN_CMD_JOIN_MATCHM_PASSWORD){
 
 				if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
 					DisconnectUser(p);
@@ -856,6 +876,9 @@ printf("discoing....\n");
 				players[p].command = COMMAND_NONE;
 			}
 			/***********************************************************************************/
+			players[p].state = USER_DISCONNECTING;
+			printf("Got spurious data from player %d[%s], disconnecting\n", p, players[p].command);
+			
 		}/* while(players[p].din_count > players[p].din_pos) */
 
 		/* done processing received data, check for data we should send */
@@ -1146,15 +1169,10 @@ int main(int argc, char *argv[]){
 			}
 printf("accepted client\n");
 			fcntl(players[p].socket, F_SETFL, O_NONBLOCK);//inherited from listen_socket, not needed ever??
-players[p].state = USER_CONNECTING;
-
-		//	players[p].state = USER_CONNECTED;
-		//	players[p].mtu = 32; /* maximum packet size to send(additional to the requested bytes functionality) */
-		//	players[p].command == COMMAND_NONE;
-			players[p].din_pos = players[p].dout_pos = players[p].din_count = players[p].dout_count = players[p].din_total = 0;
-			for(i = 0;i < USER_KEY_LEN;i++) /* ask the user to take this number through a convulated lookup into their stored key */
-				players[p].challenge[i] = rand()%USER_KEY_LEN; /* simple games can ignore and provide their verbatum key as stored(less secure...I guess) */
-			SocketWrite(players[p].socket, players[p].challenge, USER_KEY_LEN);
+			players[p].state = USER_CONNECTING;
+			players[p].command = COMMAND_NONE;
+			players[p].din_pos = players[p].dout_pos = players[p].din_end = players[p].dout_end = players[p].din_total = players[p].dout_total = 0;
+			players[p].idle_time = players[p].connection_time = 0;
 		}
 	}
 
@@ -1216,7 +1234,7 @@ int NetworkInit(){
 }
 
 int LoadUsers(){
-
+printf("LOADING USERS...\n");
 	int u;
 	for(u = 0; u < MAX_USERS; u++)
 		users[u].name[0] = '\0';
@@ -1255,6 +1273,7 @@ int LoadUsers(){
 		printf("\t%s\n", users[u].short_key);
 		printf("\t%s\n", users[u].long_key);
 	}
+sprintf(users[0].short_key, "ABCDEFGH");
 	return u;
 }
 
@@ -1310,4 +1329,15 @@ int AddUser(char *sn, char *nm, char *cy, int tz, int jd, char *sk, char *lk){
 	SaveUsers();
 
 	return u;
+}
+
+
+int FindMatch(int p){
+
+	return 0;
+}
+
+int JoinMatch(int p, int m){
+
+	return 1;
 }
