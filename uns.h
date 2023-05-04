@@ -67,8 +67,8 @@ char *banner = "\n"
 #define UN_CMD_CHECK_RSVP		35//'#'
 #define UN_CMD_JOIN_MATCH		36//'$'
 #define UN_CMD_REQ_MATCH_SIMPLE	37//'%'
-
-
+#define UN_CMD_CHECK_MATCH_READY	38
+#define UN_CMD_SEND_MATCH_READY	39
 
 
 
@@ -135,6 +135,7 @@ typedef struct{
 	uint32_t padstate_history[256]; /* most games will probably use 1 byte, but it can change at any time so we just store 4 */
 	int padstate_history_pos;
 
+	int match;
 	pthread_t async_task_thread; /* used for various purposes that would otherwise unfairly cause server blocking */
 	char din[4096];/* data pipeline coming in from client */
 	int din_count;
@@ -151,6 +152,7 @@ typedef struct{
 	char temp[128];
 	char filename[128];
 	char font_translate[256];
+	char match_password[32];
 	char rom_name[16];
 	long foffset;
 	FILE *file;
@@ -235,6 +237,25 @@ Logger_t logger;
 #define MAX_ROOMS	MAX_PLAYERS
 #define MAX_ROOM_USERS	16
 Room_t rooms[MAX_ROOMS];
+
+#define MATCH_STATE_NONE	0
+#define MATCH_STATE_SIMPLE	1
+
+#define MAX_MATCHES		MAX_USERS
+#define MAX_MATCH_PLAYERS	8
+
+
+typedef struct{
+	int state;
+	int players[MAX_MATCH_PLAYERS];
+	int rsvp[MAX_MATCH_PLAYERS];
+	int ready[MAX_MATCH_PLAYERS];
+	char rom_name[16];
+	char password[32];
+	int num_players, min_players, max_players;
+	struct timeval rsvp_expire[MAX_MATCH_PLAYERS];
+}Match_t;
+Match_t matches[MAX_MATCHES];
 
 /* room states are 8 bits/1 byte */
 #define ROOM_UNUSED			0
@@ -344,5 +365,5 @@ int UpdateRoom(int r);
 int LoadUsers();
 int FindMatch();
 int JoinMatch(int p, int m);
-
+int LeaveMatch(int p);
 const char *common_fontset=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]???ABCDEFGHIJKLMNOPQRSTUVWXYZ?????";

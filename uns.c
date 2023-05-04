@@ -42,6 +42,8 @@ void SleepMS(int m){
 void DisconnectUser(int p){
 	
 	ServerLog("%s has disconnected\n", users[players[p].user].name);
+	if(players[p].match)
+		LeaveMatch(p);
 	players[p].state = STATE_DISCONNECTING; /* UpdatePlayer() will handle the rest */
 	players[p].counter = 500; /* we use a delay to ensure they have a chance to receive the disconnect message */
 }
@@ -173,8 +175,8 @@ void UpdatePlayer(int p){
 			players[p].din_total += r;
 
 players[p].din[players[p].din_end] = '\0';
-printf("RX COUNT %d, NOW AT [%s]\n", r, players[p].din+players[p].din_pos);
-printf("TOTAL %d\n", players[p].din_end-players[p].din_pos);
+//printf("RX COUNT %d, NOW AT [%s]\n", r, players[p].din+players[p].din_pos);
+//printf("TOTAL %d\n", players[p].din_end-players[p].din_pos);
 
 		}
 		players[p].idle_time = 0;
@@ -199,10 +201,11 @@ printf("TOOK TO LONG TO LOG IN\n");
 
 		 /* provided login key is a valid length, check against registered users in the database */
 		int valid_pass;
-		for(i = 0;i <= MAX_USERS; i++){
-
+		for(i = 1;i <= MAX_USERS; i++){
+printf("checking against user %d\n", i);
 			if(users[i].short_key[0] == 0)
 				continue;
+printf("has key %d\n", i);
 			valid_pass = 1;
 			for(j = 0;j < USER_KEY_LEN;j++){
 	
@@ -274,15 +277,16 @@ printf("player delaying...\n");
 				players[p].state = USER_DISCONNECTING;
 				return;
 			}
-			if(!unread)
-				break; /* we may have generated response, send any available data to the client */
+			//if(!unread)
+			//	break; /* we may have generated response, send any available data to the client */
 
 			/***********************************************************************************/
 			if(players[p].command == COMMAND_NONE){ /* we expect the next byte to be a command type */
-
+				if(!unread)
+					break;
 				players[p].command = players[p].din[players[p].din_pos++];
 printf("P[%d] got new command[%d] at pos %d\n", p, players[p].command, players[p].din_pos-1);
-printf("NEXT BYTE IS [%c]\n", players[p].din[players[p].din_pos]);
+//printf("NEXT BYTE IS [%c]\n", players[p].din[players[p].din_pos]);
 				continue;
 			}
 			/***********************************************************************************/
@@ -320,10 +324,9 @@ printf("COPIED FONT TRANSLATION\n");
 			}
 			/***********************************************************************************/
 			if(players[p].command == UN_CMD_CHECK_RSVP){ /* checking for a match RVSP(no argument) */
-printf("CHECKED RSVP %d\n", p);
-				memcpy(players[p].font_translate, players[p].din+players[p].din_pos, 96);
-				players[p].dout[players[p].dout_end++] = FindMatch(p);
-printf("MATCH RETURN %d\n", players[p].dout[players[p].dout_end-1]);
+
+				players[p].dout[players[p].dout_end++] = FindRSVP(p);
+printf("%d CHECKED RSVP, RETURNED %d\n", p, players[p].dout[players[p].dout_end-1]);
 				players[p].requested_bytes++;
 				players[p].command = COMMAND_NONE;
 				continue;
@@ -331,10 +334,32 @@ printf("MATCH RETURN %d\n", players[p].dout[players[p].dout_end-1]);
 			/***********************************************************************************/
 			if(players[p].command == UN_CMD_JOIN_MATCH){ /* requesting to join a match */
 
+				if(!unread)
+					break;
 				/* we can always assume 1 unread byte is available, see above */
-printf("%d REQUESTED JOIN FOR MATCH %d\n", p, players[p].din[players[p].din_pos]);
 				players[p].dout[players[p].dout_end++] = JoinMatch(p, players[p].din[players[p].din_pos++]);
-printf("MATCH JOIN RETURNED %d\n", players[p].dout[players[p].dout_end-1]);
+printf("%d REQUESTED JOIN MATCH %d, RETURNED %d\n", p, players[p].din[players[p].din_pos-1], players[p].dout[players[p].dout_end-1]);
+				players[p].requested_bytes++;
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_REQ_MATCH_SIMPLE){ /* simple request to join a match, will create/join a match if none available(so next RSVP will succeed) */
+
+				/* we can always assume 1 unread byte is available, see above */
+printf("%d REQUESTED SIMPLE MATCH\n", p);
+				RequestMatch(p);
+				players[p].dout[players[p].dout_end++] = RequestMatch(p);
+			//	players[p].requested_bytes++;
+				players[p].command = COMMAND_NONE;
+				continue;
+			}
+			/***********************************************************************************/
+			if(players[p].command == UN_CMD_SEND_MATCH_READY){ /* player has indicated they are ready */
+
+				/* we can always assume 1 unread byte is available, see above */
+printf("%d IS READY IN MATCH %D\n", p, players[p].match);
+				players[p].dout[players[p].dout_end++] = RequestMatch(p);
 				players[p].requested_bytes++;
 				players[p].command = COMMAND_NONE;
 				continue;
@@ -698,7 +723,7 @@ printf("MATCH JOIN RETURNED %d\n", players[p].dout[players[p].dout_end-1]);
 				players[p].command = COMMAND_NONE;
 			}
 			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_ROOUN_CMD_JOIN_MATCHM_PASSWORD){
+			if(players[p].command == COMMAND_SET_ROOM_PASSWORD){
 
 				if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
 					DisconnectUser(p);
@@ -882,14 +907,17 @@ printf("MATCH JOIN RETURNED %d\n", players[p].dout[players[p].dout_end-1]);
 		}/* while(players[p].din_count > players[p].din_pos) */
 
 		/* done processing received data, check for data we should send */
-		if(players[p].requested_bytes && players[p].dout_pos < players[p].dout_count){
+		if(players[p].requested_bytes && players[p].dout_pos < players[p].dout_end){
+
 			uint8_t pbuf[sizeof(players[p].dout)+1];
-			for(i = 0;i < players[p].requested_bytes && players[p].dout_pos <= players[p].dout_count;i++){
-				if(i == players[p].mtu)
-					break;
+			for(i = 0;i < players[p].requested_bytes && players[p].dout_pos <= players[p].dout_end;i++){
+				//if(i == players[p].mtu)
+				//	break;
 				pbuf[i] = players[p].dout[players[p].dout_pos++];
 				players[p].requested_bytes--;
 			}
+pbuf[i+1] = '\0';
+printf("SENDING CLIENT %d [%d][%s]\n", i, pbuf[0], pbuf);
 			SocketWrite(players[p].socket, pbuf, i);
 		}
 	}/* if(players[p].state == USER_CONNECTED) */
@@ -1106,7 +1134,7 @@ int main(int argc, char *argv[]){
 	}
 
 
-	if(LoadUsers())
+	if(!LoadUsers())
 		printf("WARNING: failed to load any users from data/users.dat\n");
 
 	int perr = pthread_create(&logger.thread, NULL, LoggerThreadFunction, NULL); /* initialize logging */
@@ -1248,7 +1276,7 @@ printf("LOADING USERS...\n");
 	}
 
 	char buf[1024];
-	u = 0;
+	u = 1;
 	while(fgets(buf, sizeof(buf), f)){ /* parse each line */
 		if(u == MAX_USERS){
 			printf("WARNING: over maximum users in user fiile\n");
@@ -1262,7 +1290,7 @@ printf("LOADING USERS...\n");
 
 
 		sscanf(buf, " %s , %s , %s , %d , %d , %d , %d , %s , %s , ", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, users[u].reservation_expire.tv_sec, users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
-		printf("Loaded user:\n");
+		printf("Loaded user %d:\n", u);
 		printf("\t%s\n", users[u].short_name);
 		printf("\t%s\n", users[u].name);
 		printf("\t%s\n", users[u].country);
@@ -1272,8 +1300,9 @@ printf("LOADING USERS...\n");
 		printf("\t%d\n", users[u].join_date.tv_sec);
 		printf("\t%s\n", users[u].short_key);
 		printf("\t%s\n", users[u].long_key);
+		u++;
 	}
-sprintf(users[0].short_key, "ABCDEFGH");
+sprintf(users[1].short_key, "ABCDEFGH");
 	return u;
 }
 
@@ -1294,6 +1323,8 @@ printf("saved line: %s , %s , %s , %d , %d , %d , %d , %s , %s ,\n", users[u].sh
 	}
 	fclose(f);
 }
+
+
 
 int AddUser(char *sn, char *nm, char *cy, int tz, int jd, char *sk, char *lk){
 //TODO DONT ALLOW DUPLICATES
@@ -1332,12 +1363,159 @@ int AddUser(char *sn, char *nm, char *cy, int tz, int jd, char *sk, char *lk){
 }
 
 
-int FindMatch(int p){
+/*
+Games will generally run the Uzenet backend to immediately attempt to check for an RSVP. Such an RSVP likely indicates a separate program ran before the
+ROM(and likely caused the ROM flash/boot) and setup a match according to user intent. This allows a game to bring a user right to a network game insteaad
+of having extra logic and/or making the user run through menus. This can even allow a game with no Uzenet menu features at all to operate.
 
+If a game does not detect an RSVP, it will generally then wait for the user to indicate they wish to play an Uzenet game. In that case, they will then again
+check for an RSVP in a loop. If no RSVP is detected, a simple match request is made. This will either find an existing compatible match, or create a new one,
+and then make an RSVP. Then next time through the loop, the RSVP will succeed(give a room number), and a join room command will complete the action. This allows
+flexibility and expansion, as well as a simple way to make games support both in game and external matches. More advanced methods will be documented.
+*/
+int FindRSVP(int p){
+
+	if(players[p].rom_name[0] == 0) /* must specify the ROM being played before checking for RSVP */
+		return 0;
+
+	int i,m;
+	for(m=1;m<MAX_MATCHES;m++){
+
+		if(matches[m].state == MATCH_STATE_NONE)
+			continue;
+
+		if(strncmp(matches[m].rom_name, players[p].rom_name, 8)) /* ignore RSVPs if not for this ROM */
+			continue;
+
+		for(i=0;i<MAX_MATCH_PLAYERS;i++){ /* don't need a match password if an RSVP, it was pre-arranged */
+			if(matches[m].rsvp[i] == players[p].user)
+				return m;
+		}
+	}
 	return 0;
 }
 
+void EliminateOldRSVP(int p, int m){
+	int i,j;
+	for(i=1;i<MAX_MATCHES;i++){ /* eliminate any other RSVPs for this player */
+		if(m == i)
+			continue;
+
+		for(j=0;j<MAX_MATCH_PLAYERS;j++){
+			if(matches[i].rsvp[j] == players[p].user){
+				matches[i].rsvp[j] = 0;
+				/* TODO no need to alert since this wasn't already joined? */
+			}
+		}
+		if(matches[i].num_players == 0){
+			for(j=0;j<MAX_MATCH_PLAYERS;j++){
+				if(matches[i].rsvp[j])
+					break;
+				if(j == MAX_MATCH_PLAYERS-1)//no RSVP and no players? clean up this match
+					matches[i].state = 0;
+			}
+		}
+	}
+}
+
+
+int RequestMatch(int p){ /* try to find a compatible match, or else create one(with an RSVP for this player in slot 0). Next check for an RSVP will succeed. */
+
+	if(players[p].rom_name[0] == 0) /* need to specify ROM first */
+		return 0;
+
+	int i,m;
+	for(m=1;m<MAX_MATCHES;m++){
+
+		if(matches[m].state == MATCH_STATE_NONE)
+			continue;
+
+		if(strncmp(matches[m].rom_name, players[p].rom_name, 8)) /* ignore matches if not for this ROM */
+			continue;
+
+		if(matches[m].password[0] && strncmp(matches[m].password, players[p].match_password, 8)) /* if there is a password, see if the user specified it */
+			continue;
+
+		int num_rsvp = 0;
+		for(i=0;i<MAX_MATCH_PLAYERS;i++){
+			if(matches[m].rsvp[i])
+				num_rsvp++;
+		}
+
+		if(!matches[m].num_players || matches[m].num_players+num_rsvp >= matches[m].max_players) /* ignore empty or full matches */
+			continue;
+
+		/* TODO ADD OTHER FILTERS HERE */
+		/* OTHERWISE THIS ROOM IS A MATCH */
+
+		for(i=0;i<MAX_MATCH_PLAYERS;i++){
+			if(!matches[m].rsvp[i]){
+				matches[m].rsvp[i] = players[p].user;
+printf("ADDED RSVP IN %d\n", m);		
+				return m;
+			}
+		}
+	}
+
+	for(m=1;m<MAX_MATCHES;m++){ /* no existing match, create a new one with an RSVP for this player */
+		if(matches[m].state != MATCH_STATE_NONE)
+			continue;
+
+		matches[m].state = MATCH_STATE_SIMPLE;
+		strncpy(matches[m].rom_name, players[p].rom_name, 8);
+		strncpy(matches[m].password, players[p].match_password, 8);
+		matches[m].num_players = 0;
+		matches[m].min_players = 2;
+		matches[m].max_players = 2;
+		matches[m].rsvp[0] = players[p].user; /* this postion will put the requesting player in charge */
+		matches[m].rsvp_expire[0] = current_time;
+		matches[m].rsvp_expire[0].tv_sec += 10;
+		EliminateOldRSVP(p, m);
+
+		return m;
+	}
+	return 0; /* shouldn't happen */
+}
+
+
+
 int JoinMatch(int p, int m){
+printf("JoinMatch(%d, %d)\n", p, m);
+	if(matches[m].state == MATCH_STATE_NONE)
+		return 1;
+
+	/* TODO ADD OTHER FILTERS HERE */
+
+	int i;
+	for(i=0;i<MAX_MATCH_PLAYERS;i++){
+		if(matches[m].rsvp[i] == players[p].user){
+			EliminateOldRSVP(p, m);
+			players[p].match = m;
+//printf("PLAYER %d IS NOW IN MATCH %d\n", p, m);
+			return 0;
+		}
+	}
+	return 2; /* no existing RSVP */
+}
+
+
+int MatchReady(int m){
 
 	return 1;
 }
+
+
+int LeaveMatch(int p){
+	int i;
+	for(i=0;i<MAX_MATCH_PLAYERS;i++){
+		if(matches[players[p].match].players[i] == p){
+			matches[players[p].match].players[i] = 0;
+			matches[players[p].match].num_players--;
+		}
+		if(matches[players[p].match].rsvp[i] == players[p].user)
+			matches[players[p].match].rsvp[i] = 0;
+	}
+}
+
+
+
