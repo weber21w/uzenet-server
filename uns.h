@@ -25,7 +25,7 @@ char *banner = "\n"
 #define EMULATER_RUNNING	1
 #define EMULATER_CLOSING	2
 
-
+#define MAX_MATCH_LFSR	6
 
 
 #define UN_CMD_NULL			0//0x00:(NULL, as a command this will cause the server to disconnect assumed as error)
@@ -69,9 +69,9 @@ char *banner = "\n"
 #define UN_CMD_REQ_MATCH_SIMPLE	37//'%'
 #define UN_CMD_CHECK_MATCH_READY	38
 #define UN_CMD_SEND_MATCH_READY	39
+#define UN_CMD_PLAYER_INFO_SIMPLE	40
 
-
-
+#define UN_CMD_PAD_DATA_SIMPLE	60
 
 
 
@@ -148,6 +148,7 @@ typedef struct{
 	int din_total;
 	int dout_total;
 	int idle_time;
+	int telnet_state;
 	uint32_t waiting_thread;
 	char temp[128];
 	char filename[128];
@@ -252,6 +253,7 @@ typedef struct{
 	int ready[MAX_MATCH_PLAYERS];
 	char rom_name[16];
 	char password[32];
+	unsigned int lfsr[8];
 	int num_players, min_players, max_players;
 	struct timeval rsvp_expire[MAX_MATCH_PLAYERS];
 }Match_t;
@@ -312,16 +314,18 @@ Match_t matches[MAX_MATCHES];
 
 #define SUBSCRIBE_IP_SHARE		1
 #define SUBSCRIBE_SHARE_HISTORY	2
-
+/*
 #define STATE_EMPTY			0
 #define STATE_IDLE			1
-#define STATE_PLAYING		2
-#define STATE_DISCONNECTING	3
-
-#define USER_DISCONNECTED	STATE_EMPTY
+#define STATE_READY			2
+#define STATE_PLAYING			3
+#define STATE_DISCONNECTING		4
+*/
+#define USER_DISCONNECTED	0
 #define USER_CONNECTING	1
 #define USER_CONNECTED		2
-#define USER_DISCONNECTING	255
+#define USER_READY		8
+#define USER_DISCONNECTING	128
 
 //per player subscription options
 #define SUBSCRIBE_UNICAST		1 //receive unicast data from this player
@@ -330,18 +334,21 @@ Match_t matches[MAX_MATCHES];
 #define SUBSCRIBE_SHARE_DATA		64 //allow player to receive our historical data(useful for some sort of networking scheme?)
 #define SUBSCRIBE_SHARE_IP		128 //allow player to receive our IP from the server(UDP hole punching, direct connection, etc.)
 
-#define LISTEN_PORT 2345
+#define TELNET_LISTEN_PORT 23
+#define GAME_LISTEN_PORT 2345
 
 struct timeval current_time;
 int server_debugging;
 int server_quit;
 uint64_t server_tick;
 int listen_socket;
+int telnet_socket;
 struct sockaddr_in server_addr_in;
+struct sockaddr_in telnet_addr_in;
 
+const char *telnet_greeting = "\xFF\xFB\x03\rPassword:\n12312312312312lkfjasl;kdfj;lkasjd;lfja;sldjf;lasjdfl;kjasdl;fkjal;skdjfl;asjdfl;kjasl;dkfjl;askjdfl;jasdl;kfjasl;kdjfl;kasdjf;lkasjdl;fkjasl;dfjkl;asdf";
 void die(char *s, int e);
 void SleepMS(int m);
-void DisconnectUser(int p);
 void QueueByteOut(int p, unsigned char v);
 unsigned char ReadByteIn(int p);
 void ChangeRoom(int p, int r);
@@ -359,11 +366,13 @@ uint32_t Read32In(int p);
 int PlayerReceive(int p);
 int SocketWrite(int sock, char *buf, int len);
 
-void DisconnectUser(int p);
+void DisconnectUser(int p, int now);
 void UpdatePlayer(int p);
 int UpdateRoom(int r);
 int LoadUsers();
 int FindMatch();
 int JoinMatch(int p, int m);
 int LeaveMatch(int p);
+int IsMatchReady(int m);
+int IsReadyForMatch(int p);
 const char *common_fontset=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]???ABCDEFGHIJKLMNOPQRSTUVWXYZ?????";
