@@ -148,6 +148,8 @@ void UpdatePlayer(int p){
 
 	int i, j, k, l, r, f, o;
 	char packet_buf[2048];
+//	if(players[p].dout_pos == players[p].dout_end)
+//		players[p].dout_pos = players[p].dout_end;
 
 	if(players[p].state != USER_DISCONNECTING){
 		/* receive any network data the client sent */
@@ -283,6 +285,8 @@ printf("discoing....\n");
 
 		if(players[p].din_end == players[p].din_pos) /* all processed, reset to beginning of buffer */
 			players[p].din_pos = players[p].din_end = 0;
+		if(players[p].dout_pos == players[p].dout_end)
+			players[p].dout_pos = players[p].dout_end = 0;
 
 		if(players[p].delay){
 printf("player delaying...\n");
@@ -389,7 +393,7 @@ printf("%d CHECKED IF MATCH %d READY\n", p, players[p].match);
 			if(players[p].command == UN_CMD_SEND_MATCH_READY){ /* player has indicated they are ready */
 
 				/* we can always assume 1 unread byte is available, see above */
-//printf("%d IS READY IN MATCH %d\n", p, players[p].match);
+printf("%d IS READY IN MATCH %d\n", p, players[p].match);
 				ReadyForMatch(p);
 				players[p].command = COMMAND_NONE;
 				continue;
@@ -397,16 +401,15 @@ printf("%d CHECKED IF MATCH %d READY\n", p, players[p].match);
 			if(players[p].command == UN_CMD_PLAYER_INFO_SIMPLE){ /* player requested info on players in match */
 
 				int m = players[p].match;
-printf("SENT USER DATA [");
-				for(i=0;i<4;i++){//this is a simple format for up to 4 player games(zero padded max length names, concatenated)
+printf("SENT USER DATA: starting dout_pos: %d dout_end: %d\n", players[p].dout_pos, players[p].dout_end);
+				for(i=1;i<4+1;i++){//this is a simple format for up to 4 player games(zero padded max length names, concatenated)
 					for(j=0;j<13;j++){
 						players[p].dout[players[p].dout_end++] = users[players[matches[m].players[i]].user].name[j];
-printf("%c",players[p].dout[players[p].dout_end-1]);
+printf("%c[%d]\n",players[p].dout[players[p].dout_end-1],players[p].dout[players[p].dout_end-1]);
 					}
 				}
-printf("]\n");
-				players[p].dout_end += (13*4);
 				players[p].requested_bytes += (13*4);
+printf("]count %d, %d\n", players[p].dout_end, players[p].requested_bytes);
 				players[p].command = COMMAND_NONE;
 				continue;
 			}			/***********************************************************************************/
@@ -958,17 +961,21 @@ printf("]\n");
 
 SEND_CLIENT_DATA:
 		/* done processing received data, check for data we should send */
-		if(players[p].requested_bytes && players[p].dout_pos < players[p].dout_end){
+		if(/*players[p].requested_bytes && */players[p].dout_pos < players[p].dout_end){
 
 			uint8_t pbuf[sizeof(players[p].dout)+1];
-			for(i = 0;i < players[p].requested_bytes && players[p].dout_pos <= players[p].dout_end;i++){
-				//if(i == players[p].mtu)
-				//	break;
+printf("REQUESTED: %d\n", players[p].requested_bytes);
+			for(i = 0;i < players[p].requested_bytes;i++){
+printf("%c:%d\n",players[p].dout[players[p].dout_pos],i);
+				if(players[p].dout_pos == players[p].dout_end){
+printf("\n\nDOUT END\n\n");
+					break;
+				}
 				pbuf[i] = players[p].dout[players[p].dout_pos++];
-				players[p].requested_bytes--;
 			}
+			players[p].requested_bytes -= i;
 pbuf[i+1] = '\0';
-printf("SENDING CLIENT %d [%d][%s]\n", i, pbuf[0], pbuf);
+printf("SENDING CLIENT %d [%d][%s] left %d\n", i, pbuf[0], pbuf, players[p].requested_bytes);
 			SocketWrite(players[p].socket, pbuf, i);
 		}
 	}/* if(players[p].state == USER_CONNECTED) */
@@ -1189,7 +1196,7 @@ int main(int argc, char *argv[]){
 	if(!LoadUsers())
 		printf("WARNING: failed to load any users from data/users.dat\n");
 
-	int perr = pthread_create(&logger.thread, NULL, LoggerThreadFunction, NULL); /* initialize logging */
+//	int perr = pthread_create(&logger.thread, NULL, LoggerThreadFunction, NULL); /* initialize logging */
 
 	rooms[0].state = ROOM_OPEN;
 	int i,j,k;
@@ -1609,10 +1616,12 @@ printf("ADDING PLAYER %d TO MATCH %d RSVP 1\n", p, m);
 		matches[m].rsvp_expire[0] = current_time;
 		matches[m].rsvp_expire[0].tv_sec += 10;
 		EliminateOldRSVP(p, m);
-		int j;
-		for(j=1;j<MAX_MATCH_LFSR;j++){
-			while((matches[m].lfsr[i] = rand()) == 0);
-printf("ROLLED LFSR[%d]\n", matches[m].lfsr[i]);
+
+		for(i=1;i<MAX_MATCH_LFSR;i++){
+			do{
+				matches[m].lfsr[i] = rand();
+			}while(!(matches[m].lfsr[i]&0xFF));
+printf("MATCH %d LFSR %d is [%d] LSB[%d]\n", m, i, matches[m].lfsr[i], (matches[m].lfsr[i]&0xFF));
 		}
 
 		return m;
@@ -1669,9 +1678,10 @@ printf("LEADER LEFT MATCH %d\n", m);
 	//see if this match is now over
 	for(i=1;i<MAX_MATCH_PLAYERS;i++){
 		if(matches[m].players[i] || matches[m].rsvp[i])//someone still counting on this?
-			return;
+			return 0;
 	}
 printf("DELETING ABANDONED MATCH %d\n", m);
+	return 1;
 }
 
 
@@ -1692,7 +1702,8 @@ printf("**PLAYER %d ISN'T READY\n", matches[m].players[i]);
 	if(matches[m].num_players < matches[m].min_players){
 
 	}
-	return (matches[m].lfsr[0]&0xFF);//otherwise we return 1 byte of LFSR(never 0), for simple use cases and a signal for ready
+printf("MATCH %d IS READY WITH %d\n", m, (matches[m].lfsr[1]&0xFF));
+	return (matches[m].lfsr[1]&0xFF);//otherwise we return 1 byte of LFSR(never 0), for simple use cases and a signal for ready
 }
 
 

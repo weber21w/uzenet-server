@@ -374,5 +374,8 @@ int FindMatch();
 int JoinMatch(int p, int m);
 int LeaveMatch(int p);
 int IsMatchReady(int m);
+int ReadyForMatch(int p);
 int IsReadyForMatch(int p);
+int FindRSVP(int p);
+int RequestMatch(int p);
 const char *common_fontset=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]???ABCDEFGHIJKLMNOPQRSTUVWXYZ?????";
