@@ -217,9 +217,9 @@ printf("TOOK TOO LONG TO LOG IN\n");
 		//CheckCredentials();
 		int valid_pass;
 		for(i = 1;i <= MAX_USERS; i++){
-printf("checking against user %d\n", i);
 			if(users[i].short_key[0] == 0)
 				continue;
+printf("checking against user %d\n", i);
 //printf("has key %d\n", i);
 			valid_pass = 1;
 			for(j = 0;j < USER_KEY_LEN;j++){
