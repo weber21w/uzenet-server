@@ -1430,10 +1430,10 @@ sprintf(users[1].short_key, "ABCDEFGH");
 sprintf(users[2].short_key, "BCDEFGHI");
 sprintf(users[3].short_key, "CDEFGHIJ");
 sprintf(users[4].short_key, "DEFGHIJK");
-sprintf(users[1].name, "BOT1");
-sprintf(users[2].name, "BOT2");
-sprintf(users[3].name, "BOT3");
-sprintf(users[4].name, "BOT4");
+sprintf(users[1].name, "UZE6666");
+sprintf(users[2].name, "DANBOID");
+sprintf(users[3].name, "D3THADD3R");
+sprintf(users[4].name, "CUNNINGFLO");
 	return u;
 }
 
