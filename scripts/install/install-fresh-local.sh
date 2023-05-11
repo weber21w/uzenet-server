@@ -44,12 +44,19 @@ if [[ ! "$RES" == *'installed'* ]]; then echo "**NEED SUDO TO INSTALL [g++]**"; 
 wget -O uns-latest.zip ${UNS_GITHUB_URL}
 unzip -o uns-latest.zip #overwrite existing
 rm uns-latest.zip
+
 if [[ -d 'uns' ]] #already an existing install?
 then
 	mv uns/data/users.dat users.dat #save existing user file
 	sudo rm -r uns #delete old server version
 fi
 mv *uze* uns #make standard name
+
+if [[ -f 'users.dat' ]]
+then
+	mv 'users.dat' 'uns/data/users.dat'	
+fi
+
 cd uns
 make
 
@@ -69,9 +76,11 @@ echo "" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "[Install]" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/uzenet-server.service
 
+sudo ufw allow 2345
+sudo ufw allow 23/tcp
+
 sudo systemctl enable uzenet-server #enable uzenet server to run at boot
 sudo systemctl start uzenet-server #start immediately
-
 
 
 ########Install CUzeBox########
