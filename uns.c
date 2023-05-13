@@ -201,6 +201,7 @@ players[p].din[players[p].din_end] = '\0';
 
 		if(players[p].connection_time > 294967290){//server loop waits atleast 1 nanosecond, so more than 4 seconds has passed
 printf("TOOK TOO LONG TO LOG IN\n");
+			IPStrike(p);
 			DisconnectUser(p, 1);
 			return;
 		}
@@ -236,7 +237,8 @@ printf("checking key[%c] versus [%c]\n", users[i].short_key[j], players[p].din[j
 		if(!valid_pass){ /* didn't find a user with that key */
 				
 			printf("client gave bad key\b\n");
-			players[p].state = USER_DISCONNECTING;
+			IPStrike(p);
+			DisconnectUser(p, 1);//players[p].state = USER_DISCONNECTING;
 		}else{ /*login successful! */
 
 			players[p].user = i;
@@ -938,7 +940,7 @@ printf("]count %d, %d\n", players[p].dout_end, players[p].requested_bytes);
 
 				if(BytesAvailable(p) < j+1+(3+2)) /* haven't got the complete request yet, try again next tick */
 					break;
-				
+
 				players[p].din_pos += j+1+3+2;
 
 				CreateAsynchronousTask(p, COMMAND_GET_FILE_CHUNK); /* we don't just read files inline, as they can cause stalls for all clients */
@@ -1256,9 +1258,13 @@ int main(int argc, char *argv[]){
 				}
 				players[p].telnet_state = 0;
 			}else{//got telnet connection?
+				strcpy(players[p].ip_address, inet_ntoa(player_addr_in.sin_addr));
+				if(!IPCheck(players[p].ip_address)){
 				players[p].telnet_state = 1;
 				printf("Got telnet client %d\n", p);
-printf("TELNET IP address is: %s\n", inet_ntoa(player_addr_in.sin_addr));
+
+printf("TELNET IP address is: %s\n", players[p].ip_address);
+				}
 			}
 
 
@@ -1276,19 +1282,22 @@ printf("TELNET IP address is: %s\n", inet_ntoa(player_addr_in.sin_addr));
 				}
 			}
 printf("accepted client\n");
-printf("GAME IP address is: %s\n", inet_ntoa(player_addr_in.sin_addr));
-			fcntl(players[p].socket, F_SETFL, O_NONBLOCK);//inherited from listen_socket, not needed ever??
-			players[p].state = USER_CONNECTING;
-			players[p].user = 0;
-			players[p].command = COMMAND_NONE;
-			players[p].din_pos = players[p].dout_pos = players[p].din_end = players[p].dout_end = players[p].din_total = players[p].dout_total = 0;
-			players[p].idle_time = players[p].connection_time = 0;
-			if(players[p].telnet_state){
-				sprintf(players[p].dout, "%s", telnet_greeting);
-players[p].requested_bytes += strlen(telnet_greeting);
-players[p].dout_end = strlen(telnet_greeting);
-			//	SocketWrite(players[p].socket, players[p].dout, strlen(telnet_greeting));
-printf("sent greeting:\n%s\n", players[p].dout);
+			strcpy(players[p].ip_address, inet_ntoa(player_addr_in.sin_addr));
+			if(!IPCheck(players[p].ip_address)){
+	printf("GAME IP address is: %s\n", players[p].ip_address);
+				fcntl(players[p].socket, F_SETFL, O_NONBLOCK);//inherited from listen_socket, not needed ever??
+				players[p].state = USER_CONNECTING;
+				players[p].user = 0;
+				players[p].command = COMMAND_NONE;
+				players[p].din_pos = players[p].dout_pos = players[p].din_end = players[p].dout_end = players[p].din_total = players[p].dout_total = 0;
+				players[p].idle_time = players[p].connection_time = 0;
+				if(players[p].telnet_state){
+					sprintf(players[p].dout, "%s", telnet_greeting);
+	players[p].requested_bytes += strlen(telnet_greeting);
+	players[p].dout_end = strlen(telnet_greeting);
+				//	SocketWrite(players[p].socket, players[p].dout, strlen(telnet_greeting));
+	printf("sent greeting:\n%s\n", players[p].dout);
+				}
 			}
 		}
 	}
@@ -1722,4 +1731,56 @@ printf("User %d, signaled match ready but is not in a match, assuming sync loss\
 //printf("User %d is ready in match %d\n", p, players[p].match);
 	players[p].state |= USER_READY;
 	return 0;
+}
+
+
+int IPCheck(char *ip){
+	int i;
+	for(i=0;i<MAX_IP_DENY_ENTRIES;i++){
+		if(ip_denies[i].ip[0] == '\0')
+			break;
+		if(ip_denies[i].strikes < 25)
+			continue;
+		if(strstr(ip, ip_denies[i].ip) == NULL){
+			printf("%s IS BLOCKED\n", ip);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+
+void IPStrike(int p){
+	
+	int i;
+	for(i=0;i<MAX_IP_DENY_ENTRIES;i++){
+		if(ip_denies[i].ip[0] == '\0')
+			break;
+		if(strstr(players[p].ip_address, ip_denies[i].ip) == NULL){
+			printf("**ADDED STRIKE TO IP [%s]\n", ip_denies[i].ip);
+			if(ip_denies[i].strikes < 9999)
+			ip_denies[i].strikes++;
+			return;
+		}	
+	}
+	strcpy(ip_denies[i].ip, players[p].ip_address);
+	ip_denies[i].strikes = 1;
+	printf("**ADDED NEW IP DENY ENTRY [%s]\n", ip_denies[i].ip);
+}
+
+void IPClean(int p){
+	int i;
+	for(i=0;i<MAX_IP_DENY_ENTRIES;i++){
+		if(ip_denies[i].ip[0] == '\0')
+			break;
+		if(strstr(players[p].ip_address, ip_denies[i].ip) == NULL){
+			ip_denies[i].strikes = 0;
+			return;
+		}	
+	}
+}
+
+void TelnetUpdate(){
+
+
 }

@@ -129,6 +129,7 @@ typedef struct{
 	unsigned char challenge[USER_KEY_LEN+1]; /* random bytes, the client must use to look up values in their stored key */
 	struct timeval connected_at; /* Linux epoch time the player first connected */
 	struct timeval last_activity; /* last time the player sent meaningful data */
+	char ip_address[64];
 	uint8_t ipv4[4];
 	char ipv4s[16];
 	int mtu;
@@ -267,6 +268,16 @@ Match_t matches[MAX_MATCHES];
 #define ROOM_RUNNING			2
 #define ROOM_SIMPLE_NETWORKING	128
 
+#define MAX_IP_DENY_ENTRIES	4096
+typedef struct{
+	char ip[64];
+	int strikes;
+
+}Deny_t;
+
+Deny_t ip_denies[MAX_IP_DENY_ENTRIES];
+
+
 /* commands are 8 bits/1 byte */
 #define COMMAND_NONE			0 
 #define COMMAND_GET_DATA		1 //(num_bytes): request 1-256 bytes from the server(pre-queued data, all transfer is controlled by the client)
@@ -337,7 +348,7 @@ Match_t matches[MAX_MATCHES];
 #define SUBSCRIBE_SHARE_IP		128 //allow player to receive our IP from the server(UDP hole punching, direct connection, etc.)
 
 #define TELNET_LISTEN_PORT 23
-#define GAME_LISTEN_PORT 2345
+#define GAME_LISTEN_PORT 23456
 
 struct timeval current_time;
 int server_debugging;
@@ -348,9 +359,11 @@ int telnet_socket;
 struct sockaddr_in server_addr_in;
 struct sockaddr_in telnet_addr_in;
 struct sockaddr_in player_addr_in;//[MAX_PLAYERS];
+
+char ip_block_list[128][4096];
 //struct sockaddr_in accept_addr;
 int sock_addr_len;//=sizeof(server_addr_in);
-const char *telnet_greeting = "\xFF\xFB\x03\rPassword:\n12312312312312lkfjasl;kdfj;lkasjd;lfja;sldjf;lasjdfl;kjasdl;fkjal;skdjfl;asjdfl;kjasl;dkfjl;askjdfl;jasdl;kfjasl;kdjfl;kasdjf;lkasjdl;fkjasl;dfjkl;asdf";
+const char *telnet_greeting = "\xFF\xFB\x03\rlogin:\n";
 void die(char *s, int e);
 void SleepMS(int m);
 void QueueByteOut(int p, unsigned char v);
@@ -382,4 +395,7 @@ int ReadyForMatch(int p);
 int IsReadyForMatch(int p);
 int FindRSVP(int p);
 int RequestMatch(int p);
+int IPCheck(char *ip);
+void IPStrike(int p);
+void IPClean(int p);
 const char *common_fontset=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]???ABCDEFGHIJKLMNOPQRSTUVWXYZ?????";
