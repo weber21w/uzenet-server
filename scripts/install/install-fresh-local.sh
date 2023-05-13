@@ -71,7 +71,7 @@ echo "Description=Uzenet Server" | sudo tee -a /etc/systemd/system/uzenet-server
 echo "After=syslog.target network.target auditd.service" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "[Service]" | sudo tee -a /etc/systemd/system/uzenet-server.service
-echo "ExecStart=~/home/uzenet/uns/uns" | sudo tee -a /etc/systemd/system/uzenet-server.service
+echo "ExecStart=/home/uzenet/uns/uns" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "[Install]" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/uzenet-server.service
@@ -84,8 +84,6 @@ sudo systemctl start uzenet-server #start immediately
 
 
 ########Install CUzeBox########
-rm -r *cuze* #get rid of any old stuff
-
 if [[ -f 'cuzebox-latest.zip' ]]
 then
 	rm 'cuzebox-latest.zip'
