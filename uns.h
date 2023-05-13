@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <sys/socket.h>
 
 char *banner = "\n"
 "█====██=███████▒█████=███▄====█=▓█████▄███████\n"
@@ -124,6 +125,7 @@ typedef struct{
 	int ping;
 	int preferences;
 	int socket;
+
 	unsigned char challenge[USER_KEY_LEN+1]; /* random bytes, the client must use to look up values in their stored key */
 	struct timeval connected_at; /* Linux epoch time the player first connected */
 	struct timeval last_activity; /* last time the player sent meaningful data */
@@ -345,7 +347,9 @@ int listen_socket;
 int telnet_socket;
 struct sockaddr_in server_addr_in;
 struct sockaddr_in telnet_addr_in;
-
+struct sockaddr_in player_addr_in;//[MAX_PLAYERS];
+//struct sockaddr_in accept_addr;
+int sock_addr_len;//=sizeof(server_addr_in);
 const char *telnet_greeting = "\xFF\xFB\x03\rPassword:\n12312312312312lkfjasl;kdfj;lkasjd;lfja;sldjf;lasjdfl;kjasdl;fkjal;skdjfl;asjdfl;kjasl;dkfjl;askjdfl;jasdl;kfjasl;kdjfl;kasdjf;lkasjdl;fkjasl;dfjkl;asdf";
 void die(char *s, int e);
 void SleepMS(int m);

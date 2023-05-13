@@ -13,8 +13,7 @@
 #include <netinet/in.h>
 #include <errno.h>
 #include <fcntl.h>
-
-
+#include <arpa/inet.h>
 
 void die(char *s, int e){
 	
@@ -219,7 +218,7 @@ printf("TOOK TOO LONG TO LOG IN\n");
 		for(i = 1;i <= MAX_USERS; i++){
 			if(users[i].short_key[0] == 0)
 				continue;
-printf("checking against user %d\n", i);
+//printf("checking against user %d\n", i);
 //printf("has key %d\n", i);
 			valid_pass = 1;
 			for(j = 0;j < USER_KEY_LEN;j++){
@@ -955,7 +954,7 @@ printf("]count %d, %d\n", players[p].dout_end, players[p].requested_bytes);
 			}
 			/***********************************************************************************/
 			players[p].state = USER_DISCONNECTING;
-			printf("Got spurious data from player %d[%s], disconnecting\n", p, players[p].command);
+			printf("Got spurious data from player %d[%s], disconnecting\n", p, players[p].din+players[p].din_pos);
 			
 		}/* while(players[p].din_count > players[p].din_pos) */
 
@@ -1179,6 +1178,7 @@ int main(int argc, char *argv[]){
 	printf("%s", banner);
 	int opt;
 
+
 	while((opt = getopt(argc, argv, "dlwh")) != -1){
 		switch (opt){
 			//case 'd': server_debugging = 1; break;
@@ -1192,6 +1192,7 @@ int main(int argc, char *argv[]){
 		}
 	}
 
+	int sock_addr_len=sizeof(server_addr_in);
 
 	if(!LoadUsers())
 		printf("WARNING: failed to load any users from data/users.dat\n");
@@ -1245,7 +1246,8 @@ int main(int argc, char *argv[]){
 			if(p >= MAX_PLAYERS)
 				continue;
 
-			players[p].socket = accept(telnet_socket, (struct sockaddr*)NULL, NULL);//listen for Telnet connections
+			players[p].socket = accept(telnet_socket, (struct sockaddr*)&player_addr_in, &sock_addr_len);//listen for Telnet connections
+
 			if(players[p].socket == -1){//check telnet port
 				if(errno != EWOULDBLOCK && errno != EAGAIN){
 
@@ -1256,11 +1258,13 @@ int main(int argc, char *argv[]){
 			}else{//got telnet connection?
 				players[p].telnet_state = 1;
 				printf("Got telnet client %d\n", p);
+printf("TELNET IP address is: %s\n", inet_ntoa(player_addr_in.sin_addr));
 			}
 
 
 			if(!players[p].telnet_state){
-			 	players[p].socket = accept(listen_socket, (struct sockaddr*)NULL, NULL);//(struct sockaddr *)&client_addrs[c], &client_addr_sizes[c]);
+			 	players[p].socket = accept(listen_socket, (struct sockaddr*)&player_addr_in, &sock_addr_len);//(struct sockaddr *)&client_addrs[c], &client_addr_sizes[c]);
+
 				if(players[p].socket == -1){
 				
 					if(errno != EWOULDBLOCK && errno != EAGAIN){
@@ -1272,6 +1276,7 @@ int main(int argc, char *argv[]){
 				}
 			}
 printf("accepted client\n");
+printf("GAME IP address is: %s\n", inet_ntoa(player_addr_in.sin_addr));
 			fcntl(players[p].socket, F_SETFL, O_NONBLOCK);//inherited from listen_socket, not needed ever??
 			players[p].state = USER_CONNECTING;
 			players[p].user = 0;
@@ -1279,7 +1284,7 @@ printf("accepted client\n");
 			players[p].din_pos = players[p].dout_pos = players[p].din_end = players[p].dout_end = players[p].din_total = players[p].dout_total = 0;
 			players[p].idle_time = players[p].connection_time = 0;
 			if(players[p].telnet_state){
-				sprintf(players[p].dout, telnet_greeting);
+				sprintf(players[p].dout, "%s", telnet_greeting);
 players[p].requested_bytes += strlen(telnet_greeting);
 players[p].dout_end = strlen(telnet_greeting);
 			//	SocketWrite(players[p].socket, players[p].dout, strlen(telnet_greeting));
@@ -1411,15 +1416,15 @@ printf("LOADING USERS...\n");
 			continue;
 
 
-		sscanf(buf, " %s , %s , %s , %d , %d , %d , %d , %s , %s , ", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, users[u].reservation_expire.tv_sec, users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
+		sscanf(buf, " %s , %s , %s , %d , %d , %d , %d , %s , %s , ", users[u].short_name, users[u].name, users[u].country, (int *)&users[u].time_zone, (int *)&users[u].reservation_room, (int *)&users[u].reservation_expire.tv_sec, (int *)&users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
 		printf("Loaded user %d:\n", u);
 		printf("\t%s\n", users[u].short_name);
 		printf("\t%s\n", users[u].name);
 		printf("\t%s\n", users[u].country);
 		printf("\t%d\n", users[u].time_zone);
 		printf("\t%d\n", users[u].reservation_room);
-		printf("\t%d\n", users[u].reservation_expire.tv_sec);
-		printf("\t%d\n", users[u].join_date.tv_sec);
+		printf("\t%d\n", (int)users[u].reservation_expire.tv_sec);
+		printf("\t%d\n", (int)users[u].join_date.tv_sec);
 		printf("\t%s\n", users[u].short_key);
 		printf("\t%s\n", users[u].long_key);
 		u++;
@@ -1448,8 +1453,8 @@ int SaveUsers(){
 	for(u = 0; u < MAX_USERS; u++){
 		if(users[u].name[0] == '\0')
 			break;
-printf("saved line: %s , %s , %s , %d , %d , %d , %d , %s , %s ,\n", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, users[u].reservation_expire.tv_sec, users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
-		fprintf(f, "%s , %s , %s , %d , %d , %d , %d , %s , %s ,", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, users[u].reservation_expire.tv_sec, users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
+printf("saved line: %s , %s , %s , %d , %d , %d , %d , %s , %s ,\n", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, (int)users[u].reservation_expire.tv_sec, (int)users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
+		fprintf(f, "%s , %s , %s , %d , %d , %d , %d , %s , %s ,", users[u].short_name, users[u].name, users[u].country, users[u].time_zone, users[u].reservation_room, (int)users[u].reservation_expire.tv_sec, (int)users[u].join_date.tv_sec, users[u].short_key, users[u].long_key);
 		//fprintf(f, "\n");
 	}
 	fclose(f);
