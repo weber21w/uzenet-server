@@ -76,7 +76,7 @@ echo "" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "[Install]" | sudo tee -a /etc/systemd/system/uzenet-server.service
 echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/uzenet-server.service
 
-sudo ufw allow 2345
+sudo ufw allow 2345/tcp
 sudo ufw allow 23/tcp
 
 sudo systemctl enable uzenet-server #enable uzenet server to run at boot
