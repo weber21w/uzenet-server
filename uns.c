@@ -282,706 +282,733 @@ printf("discoing....\n");
 
 /***********************************************************************************/
 //printf("STATE[%d]\n", players[p].state);
-	if(players[p].state & USER_CONNECTED){
 
-		if(players[p].din_end == players[p].din_pos) /* all processed, reset to beginning of buffer */
-			players[p].din_pos = players[p].din_end = 0;
-		if(players[p].dout_pos == players[p].dout_end)
-			players[p].dout_pos = players[p].dout_end = 0;
 
-		if(players[p].delay){
+
+
+
+
+	if(!players[p].state & USER_CONNECTED)
+		return;
+
+
+
+
+
+
+	if(players[p].din_end == players[p].din_pos) /* all processed, reset to beginning of buffer */
+		players[p].din_pos = players[p].din_end = 0;
+	if(players[p].dout_pos == players[p].dout_end)
+		players[p].dout_pos = players[p].dout_end = 0;
+
+	if(players[p].delay){
 printf("player delaying...\n");
-			players[p].delay--;
+		players[p].delay--;
+		return;
+	}
+
+	while(1){ /* is there data to process? could be a message which generates data to send back */
+
+		int unread = players[p].din_end-players[p].din_pos; /* unprocessed data from the client */
+		int wspace = (sizeof(players[p].dout)-players[p].dout_end)-1; /* buffer left to write back to the client(multibyte responses need to check first) */
+		if(!wspace){ /* something went wrong... */
+			printf("Player %d[%s] response overflow\n", p, users[players[p].user].name);
+			players[p].state = USER_DISCONNECTING;
 			return;
 		}
+		//if(!unread)
+		//	break; /* we may have generated response, send any available data to the client */
 
-		while(1){ /* is there data to process? could be a message which generates data to send back */
-
-			int unread = players[p].din_end-players[p].din_pos; /* unprocessed data from the client */
-			int wspace = (sizeof(players[p].dout)-players[p].dout_end)-1; /* buffer left to write back to the client(multibyte responses need to check first) */
-			if(!wspace){ /* something went wrong... */
-				printf("Player %d[%s] response overflow\n", p, users[players[p].user].name);
-				players[p].state = USER_DISCONNECTING;
-				return;
-			}
-			//if(!unread)
-			//	break; /* we may have generated response, send any available data to the client */
-
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_NONE){ /* we expect the next byte to be a command type */
-				if(!unread)
-					break;
-				players[p].command = players[p].din[players[p].din_pos++];
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_NONE){ /* we expect the next byte to be a command type */
+			if(!unread)
+				break;
+			players[p].command = players[p].din[players[p].din_pos++];
 //printf("P[%d] got new command[%d] at pos %d\n", p, players[p].command, players[p].din_pos-1);
 //printf("NEXT BYTE IS [%c]\n", players[p].din[players[p].din_pos]);
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_ROM_IDENTIFY){
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_ROM_IDENTIFY){
 
-				if(unread < 8) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
-					break;
+			if(unread < 8) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
+				break;
 
-				memcpy(players[p].rom_name, players[p].din+players[p].din_pos, 8);
-				players[p].rom_name[9] = '\0';
-				players[p].din_pos += 8;
+			memcpy(players[p].rom_name, players[p].din+players[p].din_pos, 8);
+			players[p].rom_name[9] = '\0';
+			players[p].din_pos += 8;
 //printf("PLAYER %d SENT ROM NAME [%s]\n", p, players[p].rom_name);
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_FONT_SPECIFICATION_COMMON){ /* use the common font set, without specifying it(no argument) */
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_FONT_SPECIFICATION_COMMON){ /* use the common font set, without specifying it(no argument) */
 
-				memcpy(players[p].font_translate, common_fontset, 96);
+			memcpy(players[p].font_translate, common_fontset, 96);
 printf("DEFAULT FONT\n");
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_FONT_SPECIFY){ /* 96 characters to be used in place of ASCII equivalents(allows chat with partial fontsets) */
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_FONT_SPECIFY){ /* 96 characters to be used in place of ASCII equivalents(allows chat with partial fontsets) */
 
-				if(unread < 96) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
-					break;
+			if(unread < 96) /* waiting on an 8 character Uzenet ROM name(might not be the same as file name) */
+				break;
 
-				memcpy(players[p].font_translate, players[p].din+players[p].din_pos, 96);
-				players[p].din_pos += 96;
+			memcpy(players[p].font_translate, players[p].din+players[p].din_pos, 96);
+			players[p].din_pos += 96;
 //printf("%d SENT FONT TRANSLATION\n");
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_CHECK_RSVP){ /* checking for a match RVSP(no argument) */
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_CHECK_RSVP){ /* checking for a match RVSP(no argument) */
 
-				players[p].dout[players[p].dout_end++] = FindRSVP(p);
+			players[p].dout[players[p].dout_end++] = FindRSVP(p);
 printf("%d CHECKED RSVP, RETURNED %d\n", p, players[p].dout[players[p].dout_end-1]);
-				players[p].requested_bytes++;
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_JOIN_MATCH){ /* requesting to join a match */
+			players[p].requested_bytes++;
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_JOIN_MATCH){ /* requesting to join a match */
 
-				if(!unread)
-					break;
-				/* we can always assume 1 unread byte is available, see above */
-				players[p].dout[players[p].dout_end++] = JoinMatch(p, players[p].din[players[p].din_pos++]);
+			if(!unread)
+				break;
+			/* we can always assume 1 unread byte is available, see above */
+			players[p].dout[players[p].dout_end++] = JoinMatch(p, players[p].din[players[p].din_pos++]);
 printf("%d REQUESTED JOIN MATCH %d, RETURNED %d\n", p, players[p].din[players[p].din_pos-1], players[p].dout[players[p].dout_end-1]);
-				players[p].requested_bytes++;
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_REQ_MATCH_SIMPLE){ /* simple request to join a match, will create/join a match if none available(so next RSVP will succeed) */
+			players[p].requested_bytes++;
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_REQ_MATCH_SIMPLE){ /* simple request to join a match, will create/join a match if none available(so next RSVP will succeed) */
 
-				/* we can always assume 1 unread byte is available, see above */
+			/* we can always assume 1 unread byte is available, see above */
 printf("%d REQUESTED SIMPLE MATCH\n", p);
-				RequestMatch(p);
-		//		players[p].dout[players[p].dout_end++] = RequestMatch(p);
-			//	players[p].requested_bytes++;
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_CHECK_MATCH_READY){ /* player asking if match is launched(all match conditions met) */
+			RequestMatch(p);
+		//	players[p].dout[players[p].dout_end++] = RequestMatch(p);
+			//players[p].requested_bytes++;
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_CHECK_MATCH_READY){ /* player asking if match is launched(all match conditions met) */
 //printf("ACK ACK ACK\n");
-				players[p].dout[players[p].dout_end++] = IsMatchReady(players[p].match);
-				players[p].requested_bytes++;
+			players[p].dout[players[p].dout_end++] = IsMatchReady(players[p].match);
+			players[p].requested_bytes++;
 printf("%d CHECKED IF MATCH %d READY\n", p, players[p].match);
-				players[p].command = COMMAND_NONE;
-				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command == UN_CMD_SEND_MATCH_READY){ /* player has indicated they are ready */
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_SEND_MATCH_READY){ /* player has indicated they are ready */
 
-				/* we can always assume 1 unread byte is available, see above */
+			/* we can always assume 1 unread byte is available, see above */
 printf("%d IS READY IN MATCH %d\n", p, players[p].match);
-				ReadyForMatch(p);
-				players[p].command = COMMAND_NONE;
-				continue;
-			}			/***********************************************************************************/
-			if(players[p].command == UN_CMD_PLAYER_INFO_SIMPLE){ /* player requested info on players in match */
+			ReadyForMatch(p);
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_PLAYER_INFO_SIMPLE){ /* player requested info on players in match */
 
-				int m = players[p].match;
+			int m = players[p].match;
 printf("SENT USER DATA: starting dout_pos: %d dout_end: %d\n", players[p].dout_pos, players[p].dout_end);
-				for(i=1;i<4+1;i++){//this is a simple format for up to 4 player games(zero padded max length names, concatenated)
-					for(j=0;j<13;j++){
-						players[p].dout[players[p].dout_end++] = users[players[matches[m].players[i]].user].name[j];
+			for(i=1;i<4+1;i++){//this is a simple format for up to 4 player games(zero padded max length names, concatenated)
+				for(j=0;j<13;j++){
+					players[p].dout[players[p].dout_end++] = users[players[matches[m].players[i]].user].name[j];
 printf("%c[%d]\n",players[p].dout[players[p].dout_end-1],players[p].dout[players[p].dout_end-1]);
-					}
 				}
-				players[p].requested_bytes += (13*4);
+			}
+			players[p].requested_bytes += (13*4);
 printf("]count %d, %d\n", players[p].dout_end, players[p].requested_bytes);
-				players[p].command = COMMAND_NONE;
-				continue;
-			}			/***********************************************************************************/
-			if(players[p].command == UN_CMD_PAD_DATA_SIMPLE){ /* player sending simple pad data */
+			players[p].command = COMMAND_NONE;
+			continue;
+		}
+		/***********************************************************************************/
+		if(players[p].command == UN_CMD_PAD_DATA_SIMPLE){ /* player sending simple pad data */
 
 				players[p].command = COMMAND_NONE;
 				continue;
-			}
-			/***********************************************************************************/
-			if(players[p].command >= COMMAND_INVALID){ /* we received an unsupported command, assume the client has lost sync */
-				printf("got bad command from player %d: %d\n", p, players[p].command);
-				players[p].state = USER_DISCONNECTING;
-				break;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_BREATHER){ /* client wants a delay before more data is sent */
-				
-				if(BytesAvailable(p) < 1){ /* need the ticks/milliseconds to delay */
-					players[p].delay++; /* since they need a delay(but we don't know how long), just keep delaying until we know how long(to avoid disconnects) */
-					break;
-				}
-				players[p].command = COMMAND_NONE;
-				break;
-			}
-
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_MTU){ /* client sets the maximum data size they want at once(not necessarily a real network MTU limit...) */
-					
-					if(BytesAvailable(p) < 2)
-						break;
-					players[p].mtu = players[p].din[players[p].din_pos++]<<8; /* high byte */
-					players[p].mtu |= players[p].din[players[p].din_pos++]; /* low byte */
-					players[p].command = COMMAND_NONE;
-			}
-
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_FILLER_DATA){/* the client is adding extra data, possibly to force a TCP send(Nagle's Algorithm), ignore it! */
-			
-				players[p].command = COMMAND_NONE;
-			}
-
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_CHECK_MTU){ /* the client is checking actual network MTU, using increasing/decreasing frame/packet sizes */
-					
-					if(BytesAvailable(p) < 1)
-						break;
-					
-					/* the player can send any amount of non-255 bytes(ie a string of 0's works) to build out large packets(find threshold for network drops) */
-					if(players[p].din[players[p].din_pos++] == 255){ /* end of data, send a response so they know that MTU works */
-		
-						QueueByteOut(p, COMMAND_CHECK_MTU);
-						players[p].command = COMMAND_NONE;
-					}
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_EXCHANGE_IP){ /* client wants to request/authorize sharing IPs with a specific player(they must subscribe to this) */
-
-				/* this is useful for UDP hole punching for direct connections through NAT, among other things */
-				/* to achieve a direct connection, see the documentation */
-				if(BytesAvailable(p) < 1)
-					break;
-
-				r = players[p].din[players[p].din_pos++]; /* player we are asking about */
-				if(!(players[r].subscribed[p] & SUBSCRIBE_IP_SHARE)){ /* other player not expecting this? */
-					QueueByteOut(p, COMMAND_FAIL);
-					break;
-				}
-				QueueByteOut(p, COMMAND_PASS);
-				for(i = 0;i < sizeof(players[r].ipv4);i++)
-					QueueByteOut(p, players[r].ipv4[i]);
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_SERVER_TIME){ /* client wants to know the current server time */
-			
-				if(BytesAvailable(p) < 1)
-					break;
-
-					/* 0bs0000000
-						s = client specifies a string format(variable length)
-						t = client specifies a time zone(TODO)
-					*/
-					QueueByteOut(p, 0);
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_PAD_MODE_START){/* pad state mode, which can be overloaded into sending raw object positions, etc. */
-				
-				/*all client input is interpreted as data in this field, until they ask to stop */
-				if(BytesAvailable(p) < 1) /* client sends ... */
-					break;
-				/* 0bittssspp
-					i = send individually to other players, without waiting for everyone's input
-					tt = leading time stamp(00 for none, 01 for 1, 10 for 2, 11 for 4)
-					sss = synchronization value, commonly a PRNG seed up to full object states(000 for none, 001 for 1, 010 for 2, 011 for 4...111 for 64)
-					pp = pad state bytes 1-4
-				*/
-				
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/			
-			if(players[p].command == COMMAND_PAD_MODE_STOP){
-				
-				players[p].command = COMMAND_NONE;
-			}
-			
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_PAD_MODE_HISTORY){ /* client wants historical pad state data about a particular player/time. Can be used for spectators */
-			
-				if(BytesAvailable(p) < 6) /* need player(1), length(1), time_stamp(4)(if no data at this time, data is for nearest time after) */
-					break;
-				
-				j = ReadByteIn(p); /* player */
-				k = ReadByteIn(p); /* length */
-				int time = Read32In(p);
-
-				if(players[j].subscribed[p] & SUBSCRIBE_SHARE_HISTORY){
-
-					//TODO FIND RELEVANT TIMESTAMP POS
-
-					QueueByteOut(p, COMMAND_PAD_MODE_HISTORY);
-					QueueByteOut(p, j);
-					for(l = 0;l < 4;l++) /* copy actual time stamp(could be later than the request) */
-						QueueByteOut(p, 0);
-				}
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_WRITE_SHARED_MEM){ /* client wants to write to room shared memory(game can use for anything) */
-				
-				if(BytesAvailable(p) < 5) /* need address(4), length(1), value(1-len) */
-					break;
-
-				int address = Read32In(p);
-				unsigned char val = ReadByteIn(p);
-
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_FLUSH_BUFFER){ /* client wants to discard all current data(presumably to resync) */
-
-				players[p].din_pos = players[p].din_count = 0;
-				players[p].dout_pos = players[p].dout_count = 0;
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_DATA){ /* client wants bytes from the buffer(1 or 2 byte arguments) */
-
-				if(BytesAvailable(p) < 1)
-					break;
-
-				if(players[p].din[players[p].din_pos] == 0){ /* if 0, next byte implies multiples of 256 */
-					if(BytesAvailable(p) < 2)
-						break;
-		//			rbytes -= 1;
-				}
-		//		rbytes -= 1;
-
-				players[p].requested_bytes += players[p].din[players[p].din_pos++];
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_DISCONNECT){
-				
-				players[p].state = USER_DISCONNECTING;
-				players[p].command = COMMAND_NONE;
-				break;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_ROOM_INFO){ /* client requesting specific room info */
-
-				if(BytesAvailable(p) < 1) /* need room ID */
-					break;
-
-				r = ReadByteIn(p); /* room ID */ 
-				for(i = 0;i < sizeof(rooms[r].name); i++) /* all room names are '\0' padded to max length */
-					QueueByteOut(p, rooms[r].name[i]);
-
-				for(i = 0;i < MAX_PLAYERS_IN_ROOM; i++)
-					QueueByteOut(p, rooms[r].players[i]); /* empty player slots are padded with 0 */
-
-				QueueByteOut(p, rooms[r].game_id);
-				QueueByteOut(p, rooms[r].locked);
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_HOST_UNUSED_ROOM){
-				
-				if(BytesAvailable(p) < MAX_ROOM_PASSWORD_LEN) /* password(MAX_ROOM_PASSWORD_LEN...all '\0' for an open room) */
-					break;
-
-				r = 0; /* if we return 0, it means there are no open rooms(room 0 is a default/reserved room with empty password and no owner) */
-				/* the client musif they want to reserve the room), and MAX_ROOM_PASSWORD_LEN bytes */
-				for(i = 1;i < MAX_ROOMS;i++){
-					for(j = 0;j < MAX_PLAYERS_IN_ROOM;j++){
-						if(rooms[i].players[j]){/* not empty, we search entire list incase a player left and the array isn't sorted for an owner */
-							r = 0;
-							break;
-						}
-						r = i;
-					}
-					if(r)
-						break;
-				}
-				
-				//if(r == 0).../* shouldn't happen, we have enough room for each player to have their own */
-				ChangeRoom(p, r); /* since no one else is in, they will automatically become owner */
-				for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
-					rooms[r].password[i] = ReadByteIn(p);
-				
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_JOIN_ROOM){ /* must specify room number, and password(default is no password, ie. buffer is all '\0' */
-				
-				if(BytesAvailable(p) < 1+MAX_ROOM_PASSWORD_LEN) /* need room, and a password(always full length, padded '\0' if necessary, even for "open" rooms) */
-					break;
-				
-				j = ReadByteIn(p);
-				if(j < 0 || j >= MAX_ROOMS){
-					DisconnectUser(p,0);
-					break;
-				}
-
-				unsigned char pbuf[MAX_ROOM_PASSWORD_LEN+1];
-				for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
-					pbuf[i] = ReadByteIn(p);
-
-				if(strcmp(rooms[j].password, pbuf)){
-					QueueByteOut(p, COMMAND_FAIL);
-					break;
-				} 
-				ChangeRoom(p, j);
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_ACTIVE_ROOMS){ /* client wants to know all active rooms without filtering */
-
-				for(i = 0;i < MAX_ROOMS;i++){ /* this is fixed length to make simpler client side code, with negligible performance cost during non-play */
-					if(i == 0 || rooms[i].players[0]) /* default room, or a room with an owner, otherwise it's not active*/
-						QueueByteOut(p, 1);
-					else
-						QueueByteOut(p, 0);	
-				}
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_FILTERED_ROOMS){ /* get up to x rooms that match the filter, for more advanced client side code */
-
-				if(BytesAvailable(p) < 8+6)
-					break;
-
-				/* filters, 8 bytes:
-						game_id(0 is any),
-						min_ping(in multiples of 10, of any player),
-						max_ping(in multiples of 10, of any player),
-						game_options[5](xx,xx,xx,xx,xx=literal option matches..0,0,0,0,0 is any options...ff,ff,ff,ff,ff is any options not 0),
-				*/
-				/* sorts, 6 bytes:
-						byte 0: 0=no sort..1=low to hi ping sort..2=hi to low ping sort
-						byte 1: 0=no sort..1=low to high game_options[0] sort..2=hi to low game_options[0] sort
-						byte 2-5: ...game_options[1..3]
-						byte 5:0=no sort..1=low to high game_options[4] sort..1=hi to low game_options[0] sort		
-				*/
-			//	rbytes -= 12;
-
-				int rbuf[MAX_ROOMS];
-				int omit;
-				unsigned char f_game_id = ReadByteIn(p);
-				unsigned char f_min_ping = ReadByteIn(p);
-				unsigned char f_max_ping = ReadByteIn(p);
-				unsigned char f_game_options[5];
-				for(i = 0;i < sizeof(f_game_options);i++)
-					f_game_options[i] = ReadByteIn(p);
-
-				for(i = 1;i < MAX_ROOMS;i++){
-					omit = 0;
-		//			rbuf[rbo] = 0;
-
-					if(f_game_id && f_game_id != rooms[i].game_id)
-						omit = 1;
-					
-					for(j = 0;j < MAX_ROOM_USERS;j++){
-						if(f_min_ping && f_min_ping < players[rooms[i].players[j]].ping)
-							omit = 1;
-						if(f_max_ping && f_max_ping > players[rooms[i].players[j]].ping)
-							omit = 1;
-					}
-
-					for(j = 0;j < sizeof(f_game_options);j++){
-						if(f_game_options[j] == 0) /* match any option */
-							continue;
-						if(f_game_options[j] == 255 && rooms[i].game_options[j] != 0) /* match any option not 0 */
-							continue;
-						omit = 1;
-					}
-	//				if(!omit)
-	//					rbuf[rbo] = i; /* this room passes the filters */
-	//				rbo++;
-				}
-				
-				/* now sort by the metrics specified for each game options */
-				for(i = 0;i < sizeof(f_game_options);i++){
-	//				do{
-	//					j = 0;
-	//					for(k = 1;k < rbo;k++){
-	//						if(f_game_options[i] == 2 && rbuf[k-1] < rbuf[k]){ /* sort max to min */
-	//							unsigned char rt = rbuf[k-1];
-	//							rbuf[k-1] = rbuf[k];
-	//							rbuf[k] = rt;
-	//							j = 255; /* keep sorting */
-	//						}else if(f_game_options[i] == 1 && rbuf[k] < rbuf[k-1]){ /* sort min to max */
-	//							unsigned char rt = rbuf[k];
-	//							rbuf[k] = rbuf[k-1];
-	//							rbuf[k-1] = rt;
-	//							j = 255; /* keep sorting */
-	//						}
-	//					}
-	//				}while(j == 255);
-				}
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_KICK_PLAYER){ /* allow a room owner to kick a player out of the room */
-
-				if(rooms[players[p].room].players[0] != p){ /* client attempting to kick from a room they don't own? */
-					DisconnectUser(p,0);
-					break;
-				}
-
-				if(BytesAvailable(p) < 1) /* need the ID of the player to kick */
-					break;
-		//		rbytes -= 1;
-
-				j = players[p].din[players[p].din_pos++]; /* player to kick */
-
-				/* TODO handle any race conditions for player leaving the room before this is processed... */
-				for(i = 1;i < MAX_ROOM_USERS;i++){ /* can't kick the owner */
-					if(rooms[players[p].room].players[i] == j){
-						QueueByteOut(j, COMMAND_KICK_PLAYER); /* let the client know */
-						ChangeRoom(j, 0);
-						break;
-					}
-				}
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_ROOM_MAX_PLAYERS){
-
-				if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
-					DisconnectUser(p,0);
-					break;
-				}
-				
-				if(BytesAvailable(p) < 1) /* need max players */
-					break;
-		//		rbytes -= 1;
-
-				rooms[players[p].room].max_players = players[p].din[players[p].din_pos++];
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_ROOM_PASSWORD){
-
-				if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
-					DisconnectUser(p,0);
-					break;
-				}
-				
-				if(BytesAvailable(p) < MAX_ROOM_PASSWORD_LEN) /* regardless of the actual password, must be padded out with '\0' */
-					break;
-		//		rbytes -= MAX_ROOM_PASSWORD_LEN;
-				
-				for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
-					rooms[players[p].room].password[i] = players[p].din[players[p].din_pos++];
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_SUBSCRIBE_PLAYER){ /* allow/disallow data from another player */
-
-				if(BytesAvailable(p) < 2) /* need player, and subscription type */
-					break;
-		//		rbytes -= 2;
-				
-				k = players[p].din[players[p].din_pos++]; /* the player in question */
-				/* 0 = ubsubscribe(stop receiving data from this player) */
-				/* 1 = subscribe until room leave */
-				/* > 1 = stay subscribed after room leave */
-
-				players[p].subscribed[k] = players[p].din[players[p].din_pos++];
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_BROADCAST){ /* send a data chunk to all players in the room(they may not be subscribed) */
-				
-				j = players[p].din[players[p].din_pos]; /* get length of data */
-				if(BytesAvailable(p) < 1+j) /* not all data is ready, try again next tick */
-					break;
-				
-				players[p].din_pos++;
-				for(i = 0;i < MAX_ROOM_USERS;i++){
-					k = rooms[players[p].room].players[i];
-					if(!players[k].subscribed[p]) /* are they subscribed to this player? */
-						continue;
-					for(l = 0;l < j;l++)
-						QueueByteOut(k, players[p].din[players[p].din_pos+l]);
-				}
-				players[p].din_pos += j;
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/	
-			if(players[p].command == COMMAND_UNICAST){ /* send a data chunk to a specific player(they may not be subscribed) */
-				
-				j = players[p].din[players[p].din_pos]; /* get length of data */
-				if(BytesAvailable(p) < 1+j)
-					break;
-				players[p].din_pos++;
-
-				k = rooms[players[p].room].players[i];
-				if(players[k].subscribed[p]){ /* are they subscribed to this player? */
-					for(l = 0;l < j;l++)
-						QueueByteOut(k, players[p].din[players[p].din_pos++]);
-				}
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_PING_REQUEST){
-				
-				if(BytesAvailable(p) < 1) /* need a ping response number */
-					break;
-		//		rbytes -= 1;
-
-				QueueByteOut(p, COMMAND_PING_RESPONSE);
-				QueueByteOut(p, players[p].din[players[p].din_pos++]);
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_PING_RESPONSE){
-				
-				if(BytesAvailable(p) < 1) /* need a ping response number */
-					break;
-		//		rbytes -= 1;
-
-	//			players[p].last_ping_rx_time = server_tick;
-	//			if(!players[p].last_ping_tx_time)
-	//				players[p].last_ping_tx_time = server_tick;
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_WHATS_MY_IP){ /* asking the server what their external(public, not internal NAT)IPv4 address is */
-			
-				for(i = 0;i < 4;i++)
-					QueueByteOut(p, players[p].ipv4[i]);
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_SET_TIMER){ /* asking server to set a timer */
- 
-				if(BytesAvailable(p) < 9) /* need index(1), value(4), reset/state(4, 0 if single shot) */
-					break;
-			
-		//		rbytes -= 9;
-				j = players[p].din[players[p].din_pos++]; /* the timer to set */
-				if(j < 0 || j > sizeof(players[p].timer)){ /* assume the client has lost it's mind, or is malicious... */
-					DisconnectUser(p,0);
-					break;
-				}
-				
-				players[p].timer[j] = 0;
-				for(i = 0;i < 4;i++){
-					players[p].timer[j] <<= 8;
-					players[p].timer[j] += players[p].din[players[p].din_pos++];
-				}
-
-				players[p].timer_state[j] = 0;
-				for(i = 0;i < 4;i++){
-					players[p].timer_state[j] <<= 8;
-					players[p].timer_state[j] += players[p].din[players[p].din_pos++];
-				}
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_TIMER){ /* asking server for a timer status */
- 
-				if(BytesAvailable(p) < 1) /* need timer number */
-					break;
-
-				j = ReadByteIn(p); /* the timer to get */
-				if(j < 0 || j > sizeof(players[p].timer)){ /* assume the client has lost it's mind, or is malicious... */
-					DisconnectUser(p,0);
-					break;
-				}
-
-		//		Queue32Out(p, players[p].timer[j]);
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_GET_FILE_CHUNK){ /* client wants part of a file(open it if needed) */
-				
-				/* example buffer ['d','i','r','.','t','x','t','\0',0,0,0,2,255] */
-				j = 255;
-				char fname[64];
-			
-				for(i = 0;i <= 32;i++){ /* check for a terminated filename string */
-					if(BytesAvailable(p) < i+1)
-						break;
-					fname[i] = players[p].din[players[p].din_pos+i];
-					if(fname[i] == '\0')
-						j = i+1;
-				}
-
-				if(j < 2){
-					DisconnectUser(p,0); /* client has lost it's mind? */
-					break;
-				}
-
-				if(j == 255)
-					break;
-
-				if(BytesAvailable(p) < j+1+(3+2)) /* haven't got the complete request yet, try again next tick */
-					break;
-
-				players[p].din_pos += j+1+3+2;
-
-				CreateAsynchronousTask(p, COMMAND_GET_FILE_CHUNK); /* we don't just read files inline, as they can cause stalls for all clients */
-				players[p].command = COMMAND_AWAIT_ASYNCHRONOUS;
-				break; /* this will be caught at the top so the client can't do anything until the thread is done */
-			}
-			/***********************************************************************************/
-			if(players[p].command == COMMAND_NEXT_FILE_CHUNK){ /* asking the server for the next chunk of an already open file */
-			
-
-
-				players[p].command = COMMAND_NONE;
-			}
-			/***********************************************************************************/
+		}
+		/***********************************************************************************/
+		if(players[p].command >= COMMAND_INVALID){ /* we received an unsupported command, assume the client has lost sync */
+			printf("got bad command from player %d: %d\n", p, players[p].command);
 			players[p].state = USER_DISCONNECTING;
-			printf("Got spurious data from player %d[%s], disconnecting\n", p, players[p].din+players[p].din_pos);
+			break;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_BREATHER){ /* client wants a delay before more data is sent */
+				
+			if(BytesAvailable(p) < 1){ /* need the ticks/milliseconds to delay */
+				players[p].delay++; /* since they need a delay(but we don't know how long), just keep delaying until we know how long(to avoid disconnects) */
+				break;
+			}
+			players[p].command = COMMAND_NONE;
+			break;
+		}
+
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_SET_MTU){ /* client sets the maximum data size they want at once(not necessarily a real network MTU limit...) */
+					
+				if(BytesAvailable(p) < 2)
+					break;
+				players[p].mtu = players[p].din[players[p].din_pos++]<<8; /* high byte */
+				players[p].mtu |= players[p].din[players[p].din_pos++]; /* low byte */
+				players[p].command = COMMAND_NONE;
+		}
+
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_FILLER_DATA){/* the client is adding extra data, possibly to force a TCP send(Nagle's Algorithm), ignore it! */
 			
-		}/* while(players[p].din_count > players[p].din_pos) */
+			players[p].command = COMMAND_NONE;
+		}
+
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_CHECK_MTU){ /* the client is checking actual network MTU, using increasing/decreasing frame/packet sizes */
+					
+				if(BytesAvailable(p) < 1)
+					break;
+					
+				/* the player can send any amount of non-255 bytes(ie a string of 0's works) to build out large packets(find threshold for network drops) */
+				if(players[p].din[players[p].din_pos++] == 255){ /* end of data, send a response so they know that MTU works */
+		
+					QueueByteOut(p, COMMAND_CHECK_MTU);
+					players[p].command = COMMAND_NONE;
+				}
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_EXCHANGE_IP){ /* client wants to request/authorize sharing IPs with a specific player(they must subscribe to this) */
+
+			/* this is useful for UDP hole punching for direct connections through NAT, among other things */
+			/* to achieve a direct connection, see the documentation */
+			if(BytesAvailable(p) < 1)
+				break;
+
+			r = players[p].din[players[p].din_pos++]; /* player we are asking about */
+			if(!(players[r].subscribed[p] & SUBSCRIBE_IP_SHARE)){ /* other player not expecting this? */
+				QueueByteOut(p, COMMAND_FAIL);
+				break;
+			}
+			QueueByteOut(p, COMMAND_PASS);
+			for(i = 0;i < sizeof(players[r].ipv4);i++)
+				QueueByteOut(p, players[r].ipv4[i]);
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_SERVER_TIME){ /* client wants to know the current server time */
+			
+			if(BytesAvailable(p) < 1)
+				break;
+
+				/* 0bs0000000
+					s = client specifies a string format(variable length)
+					t = client specifies a time zone(TODO)
+				*/
+				QueueByteOut(p, 0);
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_PAD_MODE_START){/* pad state mode, which can be overloaded into sending raw object positions, etc. */
+				
+			/*all client input is interpreted as data in this field, until they ask to stop */
+			if(BytesAvailable(p) < 1) /* client sends ... */
+				break;
+			/* 0bittssspp
+				i = send individually to other players, without waiting for everyone's input
+				tt = leading time stamp(00 for none, 01 for 1, 10 for 2, 11 for 4)
+				sss = synchronization value, commonly a PRNG seed up to full object states(000 for none, 001 for 1, 010 for 2, 011 for 4...111 for 64)
+				pp = pad state bytes 1-4
+			*/
+	
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/			
+		if(players[p].command == COMMAND_PAD_MODE_STOP){
+				
+			players[p].command = COMMAND_NONE;
+		}
+			
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_PAD_MODE_HISTORY){ /* client wants historical pad state data about a particular player/time. Can be used for spectators */
+			
+			if(BytesAvailable(p) < 6) /* need player(1), length(1), time_stamp(4)(if no data at this time, data is for nearest time after) */
+				break;
+				
+			j = ReadByteIn(p); /* player */
+			k = ReadByteIn(p); /* length */
+			int time = Read32In(p);
+
+			if(players[j].subscribed[p] & SUBSCRIBE_SHARE_HISTORY){
+
+				//TODO FIND RELEVANT TIMESTAMP POS
+
+				QueueByteOut(p, COMMAND_PAD_MODE_HISTORY);
+				QueueByteOut(p, j);
+				for(l = 0;l < 4;l++) /* copy actual time stamp(could be later than the request) */
+					QueueByteOut(p, 0);
+			}
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_WRITE_SHARED_MEM){ /* client wants to write to room shared memory(game can use for anything) */
+				
+			if(BytesAvailable(p) < 5) /* need address(4), length(1), value(1-len) */
+				break;
+
+			int address = Read32In(p);
+			unsigned char val = ReadByteIn(p);
+
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_FLUSH_BUFFER){ /* client wants to discard all current data(presumably to resync) */
+
+			players[p].din_pos = players[p].din_count = 0;
+			players[p].dout_pos = players[p].dout_count = 0;
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_DATA){ /* client wants bytes from the buffer(1 or 2 byte arguments) */
+
+			if(BytesAvailable(p) < 1)
+				break;
+
+			if(players[p].din[players[p].din_pos] == 0){ /* if 0, next byte implies multiples of 256 */
+				if(BytesAvailable(p) < 2)
+					break;
+		//		rbytes -= 1;
+			}
+		//	rbytes -= 1;
+
+			players[p].requested_bytes += players[p].din[players[p].din_pos++];
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_DISCONNECT){
+				
+			players[p].state = USER_DISCONNECTING;
+			players[p].command = COMMAND_NONE;
+			break;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_ROOM_INFO){ /* client requesting specific room info */
+
+			if(BytesAvailable(p) < 1) /* need room ID */
+				break;
+
+			r = ReadByteIn(p); /* room ID */ 
+			for(i = 0;i < sizeof(rooms[r].name); i++) /* all room names are '\0' padded to max length */
+				QueueByteOut(p, rooms[r].name[i]);
+
+			for(i = 0;i < MAX_PLAYERS_IN_ROOM; i++)
+				QueueByteOut(p, rooms[r].players[i]); /* empty player slots are padded with 0 */
+
+			QueueByteOut(p, rooms[r].game_id);
+			QueueByteOut(p, rooms[r].locked);
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_HOST_UNUSED_ROOM){
+				
+			if(BytesAvailable(p) < MAX_ROOM_PASSWORD_LEN) /* password(MAX_ROOM_PASSWORD_LEN...all '\0' for an open room) */
+				break;
+
+			r = 0; /* if we return 0, it means there are no open rooms(room 0 is a default/reserved room with empty password and no owner) */
+			/* the client musif they want to reserve the room), and MAX_ROOM_PASSWORD_LEN bytes */
+			for(i = 1;i < MAX_ROOMS;i++){
+				for(j = 0;j < MAX_PLAYERS_IN_ROOM;j++){
+					if(rooms[i].players[j]){/* not empty, we search entire list incase a player left and the array isn't sorted for an owner */
+						r = 0;
+						break;
+					}
+					r = i;
+				}
+				if(r)
+					break;
+			}
+				
+			//if(r == 0).../* shouldn't happen, we have enough room for each player to have their own */
+			ChangeRoom(p, r); /* since no one else is in, they will automatically become owner */
+			for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
+				rooms[r].password[i] = ReadByteIn(p);
+				
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_JOIN_ROOM){ /* must specify room number, and password(default is no password, ie. buffer is all '\0' */
+				
+			if(BytesAvailable(p) < 1+MAX_ROOM_PASSWORD_LEN) /* need room, and a password(always full length, padded '\0' if necessary, even for "open" rooms) */
+				break;
+				
+			j = ReadByteIn(p);
+			if(j < 0 || j >= MAX_ROOMS){
+				DisconnectUser(p,0);
+				break;
+			}
+
+			unsigned char pbuf[MAX_ROOM_PASSWORD_LEN+1];
+			for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
+				pbuf[i] = ReadByteIn(p);
+
+			if(strcmp(rooms[j].password, pbuf)){
+				QueueByteOut(p, COMMAND_FAIL);
+				break;
+			} 
+			ChangeRoom(p, j);
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_ACTIVE_ROOMS){ /* client wants to know all active rooms without filtering */
+
+			for(i = 0;i < MAX_ROOMS;i++){ /* this is fixed length to make simpler client side code, with negligible performance cost during non-play */
+				if(i == 0 || rooms[i].players[0]) /* default room, or a room with an owner, otherwise it's not active*/
+					QueueByteOut(p, 1);
+				else
+					QueueByteOut(p, 0);	
+			}
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_FILTERED_ROOMS){ /* get up to x rooms that match the filter, for more advanced client side code */
+
+			if(BytesAvailable(p) < 8+6)
+				break;
+
+			/* filters, 8 bytes:
+					game_id(0 is any),
+					min_ping(in multiples of 10, of any player),
+					max_ping(in multiples of 10, of any player),
+					game_options[5](xx,xx,xx,xx,xx=literal option matches..0,0,0,0,0 is any options...ff,ff,ff,ff,ff is any options not 0),
+			*/
+			/* sorts, 6 bytes:
+					byte 0: 0=no sort..1=low to hi ping sort..2=hi to low ping sort
+					byte 1: 0=no sort..1=low to high game_options[0] sort..2=hi to low game_options[0] sort
+					byte 2-5: ...game_options[1..3]
+					byte 5:0=no sort..1=low to high game_options[4] sort..1=hi to low game_options[0] sort		
+			*/
+			//rbytes -= 12;
+
+			int rbuf[MAX_ROOMS];
+			int omit;
+			unsigned char f_game_id = ReadByteIn(p);
+			unsigned char f_min_ping = ReadByteIn(p);
+			unsigned char f_max_ping = ReadByteIn(p);
+			unsigned char f_game_options[5];
+			for(i = 0;i < sizeof(f_game_options);i++)
+				f_game_options[i] = ReadByteIn(p);
+
+			for(i = 1;i < MAX_ROOMS;i++){
+				omit = 0;
+		//		rbuf[rbo] = 0;
+
+				if(f_game_id && f_game_id != rooms[i].game_id)
+					omit = 1;
+					
+				for(j = 0;j < MAX_ROOM_USERS;j++){
+					if(f_min_ping && f_min_ping < players[rooms[i].players[j]].ping)
+						omit = 1;
+					if(f_max_ping && f_max_ping > players[rooms[i].players[j]].ping)
+						omit = 1;
+				}
+
+				for(j = 0;j < sizeof(f_game_options);j++){
+					if(f_game_options[j] == 0) /* match any option */
+						continue;
+					if(f_game_options[j] == 255 && rooms[i].game_options[j] != 0) /* match any option not 0 */
+						continue;
+					omit = 1;
+				}
+	//			if(!omit)
+	//				rbuf[rbo] = i; /* this room passes the filters */
+	//			rbo++;
+			}
+				
+			/* now sort by the metrics specified for each game options */
+			for(i = 0;i < sizeof(f_game_options);i++){
+	//			do{
+	//				j = 0;
+	//				for(k = 1;k < rbo;k++){
+	//					if(f_game_options[i] == 2 && rbuf[k-1] < rbuf[k]){ /* sort max to min */
+	//						unsigned char rt = rbuf[k-1];
+	//						rbuf[k-1] = rbuf[k];
+	//						rbuf[k] = rt;
+	//						j = 255; /* keep sorting */
+	//					}else if(f_game_options[i] == 1 && rbuf[k] < rbuf[k-1]){ /* sort min to max */
+	//						unsigned char rt = rbuf[k];
+	//						rbuf[k] = rbuf[k-1];
+	//						rbuf[k-1] = rt;
+	//						j = 255; /* keep sorting */
+	//					}
+	//				}
+	//			}while(j == 255);
+			}
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_KICK_PLAYER){ /* allow a room owner to kick a player out of the room */
+
+			if(rooms[players[p].room].players[0] != p){ /* client attempting to kick from a room they don't own? */
+				DisconnectUser(p,0);
+				break;
+			}
+
+			if(BytesAvailable(p) < 1) /* need the ID of the player to kick */
+				break;
+		//	rbytes -= 1;
+
+			j = players[p].din[players[p].din_pos++]; /* player to kick */
+
+			/* TODO handle any race conditions for player leaving the room before this is processed... */
+			for(i = 1;i < MAX_ROOM_USERS;i++){ /* can't kick the owner */
+				if(rooms[players[p].room].players[i] == j){
+					QueueByteOut(j, COMMAND_KICK_PLAYER); /* let the client know */
+					ChangeRoom(j, 0);
+					break;
+				}
+			}
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_SET_ROOM_MAX_PLAYERS){
+
+			if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
+				DisconnectUser(p,0);
+				break;
+			}
+				
+			if(BytesAvailable(p) < 1) /* need max players */
+				break;
+		//	rbytes -= 1;
+
+			rooms[players[p].room].max_players = players[p].din[players[p].din_pos++];
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_SET_ROOM_PASSWORD){
+
+			if(rooms[players[p].room].players[0] != p){ /* client attempting to change room they don't own? */
+				DisconnectUser(p,0);
+				break;
+			}
+				
+			if(BytesAvailable(p) < MAX_ROOM_PASSWORD_LEN) /* regardless of the actual password, must be padded out with '\0' */
+				break;
+		//	rbytes -= MAX_ROOM_PASSWORD_LEN;
+				
+			for(i = 0;i < MAX_ROOM_PASSWORD_LEN;i++)
+				rooms[players[p].room].password[i] = players[p].din[players[p].din_pos++];
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_SUBSCRIBE_PLAYER){ /* allow/disallow data from another player */
+
+			if(BytesAvailable(p) < 2) /* need player, and subscription type */
+				break;
+		//	rbytes -= 2;
+				
+			k = players[p].din[players[p].din_pos++]; /* the player in question */
+			/* 0 = ubsubscribe(stop receiving data from this player) */
+			/* 1 = subscribe until room leave */
+			/* > 1 = stay subscribed after room leave */
+
+			players[p].subscribed[k] = players[p].din[players[p].din_pos++];
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_BROADCAST){ /* send a data chunk to all players in the room(they may not be subscribed) */
+				
+			j = players[p].din[players[p].din_pos]; /* get length of data */
+			if(BytesAvailable(p) < 1+j) /* not all data is ready, try again next tick */
+				break;
+				
+			players[p].din_pos++;
+			for(i = 0;i < MAX_ROOM_USERS;i++){
+				k = rooms[players[p].room].players[i];
+				if(!players[k].subscribed[p]) /* are they subscribed to this player? */
+					continue;
+				for(l = 0;l < j;l++)
+					QueueByteOut(k, players[p].din[players[p].din_pos+l]);
+			}
+			players[p].din_pos += j;
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/	
+		if(players[p].command == COMMAND_UNICAST){ /* send a data chunk to a specific player(they may not be subscribed) */
+				
+			j = players[p].din[players[p].din_pos]; /* get length of data */
+			if(BytesAvailable(p) < 1+j)
+				break;
+			players[p].din_pos++;
+
+			k = rooms[players[p].room].players[i];
+			if(players[k].subscribed[p]){ /* are they subscribed to this player? */
+				for(l = 0;l < j;l++)
+					QueueByteOut(k, players[p].din[players[p].din_pos++]);
+			}
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_PING_REQUEST){
+				
+			if(BytesAvailable(p) < 1) /* need a ping response number */
+				break;
+		//	rbytes -= 1;
+
+			QueueByteOut(p, COMMAND_PING_RESPONSE);
+			QueueByteOut(p, players[p].din[players[p].din_pos++]);
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_PING_RESPONSE){
+				
+			if(BytesAvailable(p) < 1) /* need a ping response number */
+				break;
+		//	rbytes -= 1;
+
+	//		players[p].last_ping_rx_time = server_tick;
+	//		if(!players[p].last_ping_tx_time)
+	//			players[p].last_ping_tx_time = server_tick;
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_WHATS_MY_IP){ /* asking the server what their external(public, not internal NAT)IPv4 address is */
+			
+			for(i = 0;i < 4;i++)
+				QueueByteOut(p, players[p].ipv4[i]);
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_SET_TIMER){ /* asking server to set a timer */
+ 
+			if(BytesAvailable(p) < 9) /* need index(1), value(4), reset/state(4, 0 if single shot) */
+				break;
+			
+		//	rbytes -= 9;
+			j = players[p].din[players[p].din_pos++]; /* the timer to set */
+			if(j < 0 || j > sizeof(players[p].timer)){ /* assume the client has lost it's mind, or is malicious... */
+				DisconnectUser(p,0);
+				break;
+			}
+				
+			players[p].timer[j] = 0;
+			for(i = 0;i < 4;i++){
+				players[p].timer[j] <<= 8;
+				players[p].timer[j] += players[p].din[players[p].din_pos++];
+			}
+
+			players[p].timer_state[j] = 0;
+			for(i = 0;i < 4;i++){
+				players[p].timer_state[j] <<= 8;
+				players[p].timer_state[j] += players[p].din[players[p].din_pos++];
+			}
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_TIMER){ /* asking server for a timer status */
+ 
+			if(BytesAvailable(p) < 1) /* need timer number */
+				break;
+
+			j = ReadByteIn(p); /* the timer to get */
+			if(j < 0 || j > sizeof(players[p].timer)){ /* assume the client has lost it's mind, or is malicious... */
+				DisconnectUser(p,0);
+				break;
+			}
+
+		//	Queue32Out(p, players[p].timer[j]);
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_GET_FILE_CHUNK){ /* client wants part of a file(open it if needed) */
+				
+			/* example buffer ['d','i','r','.','t','x','t','\0',0,0,0,2,255] */
+			j = 255;
+			char fname[64];
+			
+			for(i = 0;i <= 32;i++){ /* check for a terminated filename string */
+				if(BytesAvailable(p) < i+1)
+					break;
+				fname[i] = players[p].din[players[p].din_pos+i];
+				if(fname[i] == '\0')
+					j = i+1;
+			}
+
+			if(j < 2){
+				DisconnectUser(p,0); /* client has lost it's mind? */
+				break;
+			}
+
+			if(j == 255)
+				break;
+
+			if(BytesAvailable(p) < j+1+(3+2)) /* haven't got the complete request yet, try again next tick */
+				break;
+
+			players[p].din_pos += j+1+3+2;
+
+			CreateAsynchronousTask(p, COMMAND_GET_FILE_CHUNK); /* we don't just read files inline, as they can cause stalls for all clients */
+			players[p].command = COMMAND_AWAIT_ASYNCHRONOUS;
+			break; /* this will be caught at the top so the client can't do anything until the thread is done */
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_NEXT_FILE_CHUNK){ /* asking the server for the next chunk of an already open file */
+			
+
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		if(players[p].command == COMMAND_START_SERVICE){ /* asking the server for the next chunk of an already open file */
+
+			if(BytesAvailable(p) < 1) /* need service number */
+				break;
+
+			j = ReadByteIn(p); /* the service to start */
+			if(j == SERVICE_INVALID){
+				DisconnectUser(p,0);
+				break;
+			}
+
+				
+
+			players[p].command = COMMAND_NONE;
+		}
+		/***********************************************************************************/
+		players[p].state = USER_DISCONNECTING;
+		printf("Got spurious data from player %d[%s], disconnecting\n", p, players[p].din+players[p].din_pos);
+			
+	}/* while(players[p].din_count > players[p].din_pos) */
 
 SEND_CLIENT_DATA:
-		/* done processing received data, check for data we should send */
-		if(/*players[p].requested_bytes && */players[p].dout_pos < players[p].dout_end){
+	/* done processing received data, check for data we should send */
+	if(/*players[p].requested_bytes && */players[p].dout_pos < players[p].dout_end){
 
-			uint8_t pbuf[sizeof(players[p].dout)+1];
+		uint8_t pbuf[sizeof(players[p].dout)+1];
 printf("REQUESTED: %d\n", players[p].requested_bytes);
-			for(i = 0;i < players[p].requested_bytes;i++){
+		for(i = 0;i < players[p].requested_bytes;i++){
 printf("%c:%d\n",players[p].dout[players[p].dout_pos],i);
-				if(players[p].dout_pos == players[p].dout_end){
+			if(players[p].dout_pos == players[p].dout_end){
 printf("\n\nDOUT END\n\n");
-					break;
-				}
-				pbuf[i] = players[p].dout[players[p].dout_pos++];
+				break;
 			}
-			players[p].requested_bytes -= i;
+			pbuf[i] = players[p].dout[players[p].dout_pos++];
+		}
+		players[p].requested_bytes -= i;
 pbuf[i+1] = '\0';
 printf("SENDING CLIENT %d [%d][%s] left %d\n", i, pbuf[0], pbuf, players[p].requested_bytes);
-			SocketWrite(players[p].socket, pbuf, i);
-		}
-	}/* if(players[p].state == USER_CONNECTED) */
-
-
+		SocketWrite(players[p].socket, pbuf, i);
+	}
 /***********************************************************************************/
 
 }
@@ -1091,7 +1118,7 @@ asm volatile("": : :"memory"); /* memory fence */
 		perr = pthread_create(&players[p].async_task_thread, NULL, ShellRedirectThreadFunction, NULL);
 	else
 		perr = 255;
-*/	
+*/
 	if(perr)
 		DisconnectUser(p,0); /* something went wrong which shouldn't have, assume the server is under attack */
 }

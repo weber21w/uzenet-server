@@ -76,8 +76,6 @@ char *banner = "\n"
 
 
 
-
-
 typedef struct{
 	pthread_t handle;
 	int room;
@@ -277,6 +275,10 @@ typedef struct{
 
 Deny_t ip_denies[MAX_IP_DENY_ENTRIES];
 
+/* service types */
+#define SERVICE_INVALID			0
+#define SERVICE_NETWORK_RADIO		1
+
 
 /* commands are 8 bits/1 byte */
 #define COMMAND_NONE			0 
@@ -322,6 +324,8 @@ Deny_t ip_denies[MAX_IP_DENY_ENTRIES];
 #define COMMAND_WRITE_SHARED_MEM	39
 #define COMMAND_FLUSH_BUFFER		40
 #define COMMAND_PASS			41
+
+#define COMMAND_START_SERVICE		128
 
 #define COMMAND_FAIL			255
 
