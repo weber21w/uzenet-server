@@ -1,0 +1,5 @@
+build-essential
+libmicrohttpd-dev
+libssl-dev
+libevent-dev
+zlib1g-dev
