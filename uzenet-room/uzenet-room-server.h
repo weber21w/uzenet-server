@@ -37,4 +37,33 @@
 void dispatch_room_command(int client_index, uint8_t cmd);
 void dispatch_tunnel_data(int client_index, int tunnel_id, const uint8_t *data, int len);
 
+/* ────────────────────────────────────────────── */
+/* Tunnel framing helpers for services           */
+/* (room <-> service over AF_UNIX socket)        */
+/* ────────────────────────────────────────────── */
+/* Returns 0 on success, non-zero on EOF/error.
+ *  - sock      : AF_UNIX socket connected to uzenet-room
+ *  - out_uid   : user id for this frame
+ *  - tunnel_id : which logical tunnel (0..15)
+ *  - buf       : payload buffer
+ *  - inout_len : on entry, size of buf; on return, actual payload length
+ */
+int ReadTunnelFramed(int sock,
+                     uint16_t *out_uid,
+                     uint8_t  *tunnel_id,
+                     uint8_t  *buf,
+                     uint16_t *inout_len);
+
+/* Returns 0 on success, non-zero on error.
+ *  - sock      : AF_UNIX socket to room
+ *  - uid       : user id
+ *  - tunnel_id : which tunnel (0..15)
+ *  - buf/len   : payload to send
+ */
+int WriteTunnelFramed(int sock,
+                      uint16_t uid,
+                      uint8_t  tunnel_id,
+                      const uint8_t *buf,
+                      uint16_t len);
+
 #endif // UZENET_ROOM_SERVER_H

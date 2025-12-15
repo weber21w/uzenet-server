@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1" />
+	<title>UzeNet</title>
+	<link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+	<header class="topbar">
+		<a class="brand" href="/">
+			<!-- Inline SVG logo (replace anytime) -->
+			<svg class="logo" viewBox="0 0 420 96" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="UzeNet">
+				<defs>
+					<linearGradient id="g" x1="0" x2="1">
+						<stop offset="0" stop-color="#7cf" />
+						<stop offset="1" stop-color="#9f7" />
+					</linearGradient>
+				</defs>
+				<rect x="6" y="10" width="76" height="76" rx="18" fill="none" stroke="url(#g)" stroke-width="6"/>
+				<circle cx="28" cy="32" r="6" fill="url(#g)"/>
+				<circle cx="60" cy="32" r="6" fill="url(#g)"/>
+				<circle cx="28" cy="64" r="6" fill="url(#g)"/>
+				<circle cx="60" cy="64" r="6" fill="url(#g)"/>
+				<path d="M28 32 L60 32 L60 64 L28 64 Z" fill="none" stroke="url(#g)" stroke-width="3"/>
+				<path d="M28 32 L60 64" fill="none" stroke="url(#g)" stroke-width="3"/>
+				<path d="M60 32 L28 64" fill="none" stroke="url(#g)" stroke-width="3"/>
+
+				<text x="104" y="64" font-family="ui-sans-serif, system-ui, Segoe UI, Arial" font-size="54" fill="#e9eef2" letter-spacing="1">
+					Uze<tspan fill="url(#g)">Net</tspan>
+				</text>
+			</svg>
+		</a>
+
+		<nav class="nav">
+			<a href="/try">Try UzeNet</a>
+			<a href="/tv">UzeNet TV</a>
+			<a href="https://uzebox.org/forums/" target="_blank" rel="noopener">Forums</a>
+			<a href="/admin" id="navAdmin" class="hidden">Admin</a>
+		</nav>
+	</header>
+
+	<main class="wrap">
+		<section class="hero">
+			<div class="heroText">
+				<h1>Play Uzebox games online.</h1>
+				<p class="sub">
+					Matchmaking, lobbies, chat, scoreboards, and browser-based “Try UzeNet”.
+				</p>
+
+				<div class="heroButtons">
+					<a class="btn primary" href="/try">Try UzeNet</a>
+					<a class="btn" href="/scores">Scoreboards</a>
+					<a class="btn" href="/tv">UzeNet TV</a>
+				</div>
+
+				<div class="statusRow">
+					<div class="pill" id="svcRoom">Room: …</div>
+					<div class="pill" id="svcTv">TV: …</div>
+					<div class="pill" id="svcBridge">Bridge: …</div>
+				</div>
+			</div>
+
+			<div class="loginCard card">
+				<div class="cardTitle">Login</div>
+
+				<form id="loginForm">
+					<label class="lbl">6-digit code</label>
+					<input class="in" id="loginCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000 (guest)" />
+					<button class="btn primary full" type="submit">Sign in</button>
+				</form>
+
+				<div class="small" id="loginMsg"></div>
+
+				<div class="divider"></div>
+
+				<div class="small">
+					Guest works with <code>000000</code> (or use a session code from Try UzeNet).
+				</div>
+			</div>
+		</section>
+
+		<section class="grid">
+			<div class="card">
+				<div class="cardTitle">Live Scoreboards</div>
+				<div class="small" id="scoresUpdated">Updated: …</div>
+				<div id="scoreboards" class="boards">
+					<div class="muted">Loading…</div>
+				</div>
+			</div>
+
+			<div class="card">
+				<div class="cardTitle">UzeNet TV</div>
+				<p class="small">
+					Eventually: watch live games in your browser.
+					For now, this is a stub page and health indicator.
+				</p>
+				<a class="btn" href="/tv">Open TV</a>
+			</div>
+
+			<div class="card">
+				<div class="cardTitle">Developer</div>
+				<p class="small">
+					Uzenet basics & docs live on the Uzebox wiki.
+				</p>
+				<a class="btn" href="https://uzebox.org/wiki/Uzenet" target="_blank" rel="noopener">Uzenet wiki</a>
+			</div>
+		</section>
+	</main>
+
+	<footer class="foot">
+		<span class="muted">UzeNet</span>
+		<span class="dot">•</span>
+		<a class="muted" href="https://uzebox.org/forums/" target="_blank" rel="noopener">Forums</a>
+	</footer>
+
+	<script src="/app.js"></script>
+</body>
+</html>

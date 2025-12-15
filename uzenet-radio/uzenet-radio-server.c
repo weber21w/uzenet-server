@@ -1,37 +1,31 @@
+// uzenet-radio-server.c - refactored for uzenet-room domain socket, no login, framed stream
 #define _POSIX_C_SOURCE 200809L
-#include <arpa/inet.h>
-#include <errno.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/types.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include <time.h>
 
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libswresample/swresample.h>
 
-#define LISTEN_PORT           30840
-#define BACKLOG               16
-#define HANDSHAKE_TIMEOUT_SEC 4
-#define CMD_MAX               1024
-#define CONSUME_RATE          15720.0   // Uzebox samples/sec
-#define HIGH_WATER            15720     // 1 second buffer threshold
+#define SOCKET_PATH "/run/uzenet/radio.sock"
+#define CMD_MAX 1024
+#define CONSUME_RATE 15720.0
+#define HIGH_WATER 15720
+#define DEFAULT_FRAME_LEN 64
+#define MIN_ALLOWED_FRAME_LEN 16
+#define MAX_ALLOWED_FRAME_LEN 512
 
-// buffer-wise placeholder for later compression
-static inline void compress_buffer(uint8_t *buf, size_t len){
-	// TODO: replace with your real algorithm
-	// identity mapping for now:
-	// for(size_t i = 0; i < len; i++) buf[i] = buf[i];
-}
-
-// Read a line (including '\n') up to maxlen.
 static ssize_t read_line(int fd, char *buf, size_t maxlen){
 	size_t i = 0;
 	while(i + 1 < maxlen){
@@ -45,7 +39,6 @@ static ssize_t read_line(int fd, char *buf, size_t maxlen){
 	return (ssize_t)i;
 }
 
-// Write all data or return error.
 static ssize_t write_all(int fd, const void *buf, size_t len){
 	size_t total = 0;
 	const char *p = buf;
@@ -60,223 +53,151 @@ static ssize_t write_all(int fd, const void *buf, size_t len){
 void *client_thread(void *arg){
 	int client_fd = *(int*)arg;
 	free(arg);
-	printf("[DEBUG] New client connected (fd=%d)\n", client_fd);
-	fflush(stdout);
+	printf("[radio] New client connected (fd=%d)\n", client_fd);
 
 	char cmd[CMD_MAX], url[CMD_MAX];
-	time_t stream_start = 0;
+	int max_frame_len = DEFAULT_FRAME_LEN;
+	time_t stream_start = 0, last_meta = 0;
 	double total_sent = 0;
 	long sleep_ms = 0;
-	time_t last_meta_request = 0;
 
-	while(1){
-		// ---- Handshake ----
-		printf("[DEBUG] Waiting for Stream handshake...\n"); fflush(stdout);
-		struct timeval tv = { HANDSHAKE_TIMEOUT_SEC, 0 };
-		setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-		ssize_t len = read_line(client_fd, cmd, sizeof(cmd));
-		if(len <= 0){
-			printf("[DEBUG] Handshake read_line returned %zd, closing\n", len);
-			break;
-		}
-		printf("[DEBUG] Received handshake: '%s'", cmd); fflush(stdout);
-		if(strncmp(cmd, "Stream ", 7) != 0){
-			printf("[DEBUG] Invalid handshake prefix, closing\n"); fflush(stdout);
-			break;
-		}
-		snprintf(url, sizeof(url), "%s", cmd + 7);
-		char *nl = strpbrk(url, "\r\n"); if(nl) *nl = '\0';
-		printf("[DEBUG] Stream URL: '%s'\n", url); fflush(stdout);
+	// Read initial Stream URL
+	if(read_line(client_fd, cmd, sizeof(cmd)) <= 0 || strncmp(cmd, "Stream ", 7) != 0){
+		printf("[radio] Invalid Stream handshake\n");
+		close(client_fd);
+		return NULL;
+	}
+	snprintf(url, sizeof(url), "%s", cmd + 7);
+	char *nl = strpbrk(url, "\r\n"); if(nl) *nl = '\0';
+	printf("[radio] Stream URL: '%s'\n", url);
 
-		// Special 'login' case
-		if(strcmp(url, "login") == 0){
-			printf("[DEBUG] Received Stream login, waiting for real URL...\n"); fflush(stdout);
-			tv.tv_sec = tv.tv_usec = 0;
-			setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-			while(1){
-				ssize_t lr = read_line(client_fd, cmd, sizeof(cmd));
-				if(lr <= 0) goto CLEANUP;
-				printf("[DEBUG] Interim command: '%s'", cmd); fflush(stdout);
-				if(strncmp(cmd, "Stream ", 7) == 0){
-					char newurl[CMD_MAX];
-					snprintf(newurl, sizeof(newurl), "%s", cmd + 7);
-					char *nl2 = strpbrk(newurl, "\r\n"); if(nl2) *nl2 = '\0';
-					if(strcmp(newurl, "login") != 0){
-						strcpy(url, newurl);
-						printf("[DEBUG] New real URL: '%s'\n", url); fflush(stdout);
-						break;
-					}
-				}
-			}
-		}
-
-		// reset counters
-		stream_start = time(NULL);
-		total_sent = 0;
-		sleep_ms = 0;
-		last_meta_request = 0;
-
-		// disable timeout for streaming
-		tv.tv_sec = tv.tv_usec = 0;
-		setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-		// ---- Init FFmpeg ----
-		printf("[DEBUG] Initializing FFmpeg for '%s'...\n", url); fflush(stdout);
-		AVFormatContext *fmt = NULL;
-
+	// ---- Init FFmpeg ----
+	avformat_network_init();
+	AVFormatContext *fmt = NULL;
 	AVDictionary *opts = NULL;
 	av_dict_set(&opts, "protocol_whitelist", "file,http,https,tcp,tls,crypto", 0);
-	av_dict_set(&opts, "user_agent",         "uzenet-radio/1.0",        0);
+	av_dict_set(&opts, "user_agent", "uzenet-radio/1.0", 0);
 
 	if(avformat_open_input(&fmt, url, NULL, &opts) < 0){
-		fprintf(stderr, "[ERROR] avformat_open_input failed for %s\n", url);
-		av_dict_free(&opts);
-		break;
+		fprintf(stderr, "[radio] avformat_open_input failed\n");
+		goto cleanup;
 	}
 	av_dict_free(&opts);
-
-	if(avformat_find_stream_info(fmt, NULL) < 0){
-		fprintf(stderr, "[ERROR] avformat_find_stream_info failed\n");
-		avformat_close_input(&fmt);
-		break;
-	}
+	if(avformat_find_stream_info(fmt, NULL) < 0) goto cleanup;
 	int aidx = av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
-	if(aidx < 0){
-		fprintf(stderr, "[ERROR] No audio stream\n");
-		avformat_close_input(&fmt);
-		break;
-	}
+	if(aidx < 0) goto cleanup;
 
-		if(aidx < 0){ printf("[ERROR] No audio stream\n"); avformat_close_input(&fmt); break; }
-		printf("[DEBUG] Found audio stream index %d\n", aidx); fflush(stdout);
+	AVCodecParameters *cp = fmt->streams[aidx]->codecpar;
+	AVCodec *codec = avcodec_find_decoder(cp->codec_id);
+	AVCodecContext *dec = avcodec_alloc_context3(codec);
+	avcodec_parameters_to_context(dec, cp);
+	avcodec_open2(dec, codec, NULL);
 
-		AVCodecParameters *cp = fmt->streams[aidx]->codecpar;
-		AVCodec *codec = avcodec_find_decoder(cp->codec_id);
-		AVCodecContext *dec = avcodec_alloc_context3(codec);
-		avcodec_parameters_to_context(dec, cp);
-		avcodec_open2(dec, codec, NULL);
+	SwrContext *swr = swr_alloc_set_opts(NULL,
+		AV_CH_LAYOUT_MONO, AV_SAMPLE_FMT_S16, 15720,
+		dec->channel_layout, dec->sample_fmt, dec->sample_rate, 0, NULL);
+	swr_init(swr);
 
-		// resample to 15720 Hz
-		SwrContext *swr = swr_alloc_set_opts(NULL,
-			AV_CH_LAYOUT_MONO, AV_SAMPLE_FMT_S16, 15720,
-			dec->channel_layout, dec->sample_fmt, dec->sample_rate,
-			0, NULL);
-		swr_init(swr);
+	AVPacket *pkt = av_packet_alloc();
+	AVFrame *frame = av_frame_alloc();
+	int16_t *resampled = NULL;
+	int max_out = 48000;
+	av_samples_alloc((uint8_t**)&resampled, NULL, 1, max_out, AV_SAMPLE_FMT_S16, 0);
 
-		AVPacket *pkt = av_packet_alloc();
-		AVFrame *frame = av_frame_alloc();
-		int16_t *resampled = NULL;
-		int max_out = 48000;
-		av_samples_alloc((uint8_t**)&resampled, NULL, 1, max_out, AV_SAMPLE_FMT_S16, 0);
+	stream_start = time(NULL);
+	total_sent = 0;
 
-		// ---- Streaming loop ----
-		while(1){
-			if(av_read_frame(fmt, pkt) < 0){ printf("[DEBUG] EOF from av_read_frame\n"); break; }
-			if(pkt->stream_index != aidx){ av_packet_unref(pkt); continue; }
-			avcodec_send_packet(dec, pkt);
-			av_packet_unref(pkt);
+	while(av_read_frame(fmt, pkt) >= 0){
+		if(pkt->stream_index != aidx){ av_packet_unref(pkt); continue; }
+		avcodec_send_packet(dec, pkt);
+		av_packet_unref(pkt);
 
-			while(avcodec_receive_frame(dec, frame) == 0){
-				int out_samples = swr_convert(swr,
-					(uint8_t**)&resampled, max_out,
-					(const uint8_t**)frame->data, frame->nb_samples);
-				if(out_samples <= 0) continue;
+		while(avcodec_receive_frame(dec, frame) == 0){
+			int out_samples = swr_convert(swr, (uint8_t**)&resampled, max_out, (const uint8_t**)frame->data, frame->nb_samples);
+			if(out_samples <= 0) continue;
 
-				printf("[DEBUG] Decoded %d samples\n", out_samples); fflush(stdout);
-				uint8_t *buf8 = malloc(out_samples);
-				for(int i = 0; i < out_samples; i++)
-					buf8[i] = ((int)resampled[i] + 32768) >> 8;
+			uint8_t *buf8 = malloc(out_samples);
+			for(int i = 0; i < out_samples; i++)
+				buf8[i] = ((int)resampled[i] + 32768) >> 8;
 
-				// sleep if requested
-				if(sleep_ms > 0){
-					printf("[DEBUG] Sleeping %ld ms\n", sleep_ms); fflush(stdout);
-					struct timespec ts = { sleep_ms/1000, (sleep_ms%1000)*1000000 };
-					nanosleep(&ts, NULL);
-					sleep_ms = 0;
-				}
+			if(sleep_ms > 0){
+				struct timespec ts = { sleep_ms / 1000, (sleep_ms % 1000) * 1000000 };
+				nanosleep(&ts, NULL);
+				sleep_ms = 0;
+			}
 
-				// occupancy
-				time_t now = time(NULL);
-				double expected = (now - stream_start) * CONSUME_RATE;
-				double occupancy = total_sent - expected;
-				if(occupancy > HIGH_WATER && out_samples > 2){
-					int di = out_samples / 2;
-					buf8[di] = (buf8[di-1] + buf8[di+1])>>1;
-					memmove(buf8+di+1, buf8+di+2, out_samples-di-2);
-					out_samples--;
-					write_all(client_fd, "Q", 1);
-					printf("[DEBUG] Sent Q hint\n"); fflush(stdout);
-				}
+			time_t now = time(NULL);
+			double expected = (now - stream_start) * CONSUME_RATE;
+			double occupancy = total_sent - expected;
+			if(occupancy > HIGH_WATER && out_samples > 2){
+				int di = out_samples / 2;
+				buf8[di] = (buf8[di - 1] + buf8[di + 1]) >> 1;
+				memmove(buf8 + di + 1, buf8 + di + 2, out_samples - di - 2);
+				out_samples--;
+				write_all(client_fd, "Q", 1);
+			}
 
-				// send audio
-				uint8_t ahdr[3] = { 'A', (uint8_t)(out_samples>>8), (uint8_t)out_samples };
-				write_all(client_fd, ahdr, 3);
-				write_all(client_fd, buf8, out_samples);
-				total_sent += out_samples;
-				printf("[DEBUG] Sent A chunk %d bytes (total_sent=%.0f)\n", out_samples, total_sent);
-				fflush(stdout);
-				free(buf8);
+			int ofs = 0;
+			while(ofs < out_samples){
+				int chunk = out_samples - ofs;
+				if(chunk > max_frame_len) chunk = max_frame_len;
+				uint8_t hdr[3] = { 'A', chunk >> 8, chunk & 0xFF };
+				write_all(client_fd, hdr, 3);
+				write_all(client_fd, buf8 + ofs, chunk);
+				ofs += chunk;
+				total_sent += chunk;
+			}
+			free(buf8);
 
-				// client commands
-				struct pollfd pfd = { .fd=client_fd, .events=POLLIN };
-				if(poll(&pfd,1,0)>0 && (pfd.revents & POLLIN)){
-					ssize_t r = read_line(client_fd, cmd, sizeof(cmd));
-					printf("[DEBUG] Received client cmd: '%s'", cmd);
-					fflush(stdout);
-					if(r>0){
-						if(!strncmp(cmd,"Stream ",7)){ printf("[DEBUG] Stream cmd, ending stream\n"); fflush(stdout); goto STREAM_END; }
-						else if(!strncmp(cmd,"Scan ",5)){
-							printf("[DEBUG] Scan command\n"); fflush(stdout);
-							// ... handle scan ...
+			struct pollfd pfd = { .fd = client_fd, .events = POLLIN };
+			if(poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)){
+				if(read_line(client_fd, cmd, sizeof(cmd)) > 0){
+					if(strncmp(cmd, "Sleep ", 6) == 0){
+						sleep_ms = strtol(cmd + 6, NULL, 10);
+					}else if(strncmp(cmd, "Meta", 4) == 0){
+						if(time(NULL) - last_meta >= 5){
+							last_meta = time(NULL);
+							// metadata stub
 						}
-						else if(!strncmp(cmd,"Sleep ",6)){
-							sleep_ms = strtol(cmd+6,NULL,10);
-							printf("[DEBUG] Set sleep_ms=%ld\n", sleep_ms); fflush(stdout);
-						}
-						else if(!strncmp(cmd,"Meta",4)){
-							time_t now_req = time(NULL);
-							if(now_req - last_meta_request >= 5){
-								last_meta_request = now_req;
-								printf("[DEBUG] Meta command, sending metadata\n"); fflush(stdout);
-								// ... send metadata ...
-							}
+					}else if(strncmp(cmd, "SetFrameLen ", 12) == 0){
+						int req = atoi(cmd + 12);
+						if(req >= MIN_ALLOWED_FRAME_LEN && req <= MAX_ALLOWED_FRAME_LEN){
+							max_frame_len = req;
 						}
 					}
 				}
 			}
 		}
-	STREAM_END:
-		printf("[DEBUG] Cleaning up FFmpeg\n"); fflush(stdout);
-		av_frame_free(&frame);
-		av_packet_free(&pkt);
-		av_freep(&resampled);
-		swr_free(&swr);
-		avcodec_free_context(&dec);
-		avformat_close_input(&fmt);
 	}
-CLEANUP:
-	printf("[DEBUG] Closing client_fd %d\n", client_fd); fflush(stdout);
+
+cleanup:
+	av_frame_free(&frame);
+	av_packet_free(&pkt);
+	av_freep(&resampled);
+	swr_free(&swr);
+	avcodec_free_context(&dec);
+	avformat_close_input(&fmt);
 	close(client_fd);
 	return NULL;
 }
 
 int main(void){
-	avformat_network_init();
-	int sock = socket(AF_INET, SOCK_STREAM, 0);
+	unlink(SOCKET_PATH);
+	int sock = socket(AF_UNIX, SOCK_STREAM, 0);
 	if(sock < 0){ perror("socket"); return 1; }
-	int opt=1; setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,&opt,sizeof(opt));
 
-	struct sockaddr_in addr = { .sin_family=AF_INET,.sin_port=htons(LISTEN_PORT),.sin_addr.s_addr=INADDR_ANY};
-	if(bind(sock,(struct sockaddr*)&addr,sizeof(addr))<0){perror("bind");return 1;}
-	listen(sock,BACKLOG);
-	printf("[DEBUG] Server listening on port %d...\n", LISTEN_PORT); fflush(stdout);
+	struct sockaddr_un addr = { .sun_family = AF_UNIX };
+	snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", SOCKET_PATH);
+	if(bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0){ perror("bind"); return 1; }
+	listen(sock, 16);
+	printf("[radio] Listening on UNIX socket %s\n", SOCKET_PATH);
 
 	while(1){
-		struct sockaddr_in cli; socklen_t len=sizeof(cli);
-		int c = accept(sock,(struct sockaddr*)&cli,&len);
-		if(c<0){ if(errno==EINTR) continue; perror("accept"); break; }
-		pthread_t tid; int *p=malloc(sizeof(int));*p=c;
-		pthread_create(&tid,NULL,client_thread,p);
+		int c = accept(sock, NULL, NULL);
+		if(c < 0){ if(errno == EINTR) continue; perror("accept"); break; }
+		int *p = malloc(sizeof(int)); *p = c;
+		pthread_t tid;
+		pthread_create(&tid, NULL, client_thread, p);
 		pthread_detach(tid);
 	}
 	close(sock);

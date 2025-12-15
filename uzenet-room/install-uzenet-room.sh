@@ -25,6 +25,9 @@ Group=nogroup
 WantedBy=multi-user.target
 EOF
 
+# Update Certificate
+./update-cert.sh
+
 # Enable + start
 systemctl daemon-reexec
 systemctl daemon-reload
