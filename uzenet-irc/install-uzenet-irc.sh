@@ -4,36 +4,38 @@ set -euo pipefail
 SERVICE_NAME="uzenet-irc"
 EXEC_NAME="uzenet-irc-server"
 SERVICE_USER="uzenet"
+SERVICE_GROUP="uzenet"
 SERVICE_ROOT="/var/lib/uzenet-irc"
 INSTALL_PATH="/usr/local/bin/${EXEC_NAME}"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 RSYSLOG_CONF="/etc/rsyslog.d/${SERVICE_NAME}.conf"
 LOG_FILE="/var/log/${SERVICE_NAME}.log"
-LOGROTATE_CONF="/etc/logrotate.d/${SERVICE_NAME}.conf"
+LOGROTATE_CONF="/etc/logrotate.d/${SERVICE_NAME}"
 DEFAULT_PORT=57431
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "[0/8] Verifying root access…"
+echo "[0/9] Verifying root access..."
 if [[ $EUID -ne 0 ]]; then
-    echo "Please run this script with sudo."
-    exit 1
+	echo "Please run this script with sudo."
+	exit 1
 fi
 
-echo "[1/8] Building server…"
+echo "[1/9] Building server..."
 make clean
 make
 
-echo "[2/8] Creating service user '${SERVICE_USER}' if needed…"
+echo "[2/9] Creating service user '${SERVICE_USER}' if needed..."
 if ! id "${SERVICE_USER}" &>/dev/null; then
-    useradd -r -s /usr/sbin/nologin -d "${SERVICE_ROOT}" "${SERVICE_USER}"
+	useradd -r -s /usr/sbin/nologin -d "${SERVICE_ROOT}" "${SERVICE_USER}"
 fi
 
-echo "[3/8] Installing binary to ${INSTALL_PATH}…"
+echo "[3/9] Installing binary to ${INSTALL_PATH}..."
 install -Dm 755 "${EXEC_NAME}" "${INSTALL_PATH}"
 
-echo "[4/8] Preparing data directory at ${SERVICE_ROOT}…"
-install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 750 "${SERVICE_ROOT}"
+echo "[4/9] Preparing data directory at ${SERVICE_ROOT}..."
+install -d -o "${SERVICE_USER}" -g "${SERVICE_GROUP}" -m 750 "${SERVICE_ROOT}"
 
-echo "[5/8] Writing systemd service file to ${SERVICE_FILE}…"
+echo "[5/9] Writing systemd service to ${SERVICE_FILE}..."
 cat > "${SERVICE_FILE}" <<EOF
 [Unit]
 Description=Uzenet IRC Proxy Server
@@ -44,7 +46,7 @@ Type=simple
 ExecStart=${INSTALL_PATH} --listen-port ${DEFAULT_PORT}
 WorkingDirectory=${SERVICE_ROOT}
 User=${SERVICE_USER}
-Group=${SERVICE_USER}
+Group=${SERVICE_GROUP}
 Restart=on-failure
 ProtectSystem=full
 ReadWritePaths=${SERVICE_ROOT}
@@ -56,33 +58,24 @@ SyslogIdentifier=${SERVICE_NAME}
 WantedBy=multi-user.target
 EOF
 
-echo "[6/8] Configuring rsyslog to send logs to ${LOG_FILE}…"
-cat > "${RSYSLOG_CONF}" <<EOF
-if \$programname == '${SERVICE_NAME}' then ${LOG_FILE}
-& stop
-EOF
+echo "[6/9] Installing rsyslog and logrotate config..."
+install -m 644 "${SCRIPT_DIR}/uzenet-irc.conf.rsyslog" "${RSYSLOG_CONF}"
+install -m 644 "${SCRIPT_DIR}/uzenet-irc.conf.logrotate" "${LOGROTATE_CONF}"
+touch "${LOG_FILE}"
+chown "${SERVICE_USER}:${SERVICE_GROUP}" "${LOG_FILE}"
+chmod 644 "${LOG_FILE}"
 
-echo "[7/8] Setting up logrotate for ${LOG_FILE}…"
-cat > "${LOGROTATE_CONF}" <<EOF
-${LOG_FILE} {
-    daily
-    rotate 7
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 ${SERVICE_USER} adm
-    sharedscripts
-    postrotate
-        systemctl kill --signal=HUP rsyslog.service >/dev/null 2>&1 || true
-    endscript
-}
-EOF
+echo "[7/9] Running setup scripts if present..."
+if [[ -x "${SCRIPT_DIR}/setup-fail2ban.sh" ]]; then
+	echo "↪ Running setup-fail2ban.sh..."
+	"${SCRIPT_DIR}/setup-fail2ban.sh"
+fi
 
-echo "[8/8] Reloading daemons and starting service…"
+echo "[8/9] Enabling and starting service..."
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
 systemctl restart rsyslog
 
-echo "Installed and started ${SERVICE_NAME}. Logs: ${LOG_FILE}"
+echo "✅ Installed and started ${SERVICE_NAME}."
+echo "📄 Logs: ${LOG_FILE}"
 systemctl status "${SERVICE_NAME}.service" --no-pager

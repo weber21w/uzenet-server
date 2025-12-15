@@ -8,10 +8,11 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <pthread.h>
 #include <sys/stat.h>
 #include <syslog.h>
 #include <openssl/sha.h>
+#include <time.h>
+#include <poll.h>
 #include "uthash.h"
 #include "uzenet-identity-client.h"
 
@@ -31,7 +32,6 @@ struct user {
 static struct user *users_by_name = NULL;
 static struct user *users_by_id = NULL;
 static time_t db_mtime = 0;
-static pthread_mutex_t db_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void trim(char *s){
 	char *e = s + strlen(s);
@@ -88,13 +88,10 @@ static void load_users(void){
 		free(u);
 	}
 	fclose(f);
-
-	pthread_mutex_lock(&db_lock);
 	HASH_CLEAR(hh_name, users_by_name);
 	HASH_CLEAR(hh_id, users_by_id);
 	users_by_name = tmp_by_name;
 	users_by_id = tmp_by_id;
-	pthread_mutex_unlock(&db_lock);
 }
 
 void uzenet_identity_init(void){
@@ -103,69 +100,61 @@ void uzenet_identity_init(void){
 		db_mtime = st.st_mtime;
 	load_users();
 	unlink(SOCK_PATH);
-}
 
-static int recv_line(int fd, char *buf, size_t maxlen){
-	size_t len = 0;
-	while(len < maxlen - 1){
-		char c;
-		int r = recv(fd, &c, 1, 0);
-		if(r <= 0) return -1;
-		if(c == '\n') break;
-		buf[len++] = c;
-	}
-	buf[len] = 0;
-	return len;
-}
-
-int uzenet_identity_check_fd(int fd, struct uzenet_identity *out){
-	char line[128];
-	if(recv_line(fd, line, sizeof(line)) <= 0)
-		return 0;
-	trim(line);
-
-	pthread_mutex_lock(&db_lock);
-	struct user *u = NULL;
-
-	if(strcmp(line, "000000") == 0){
-		// Guest
-		out->user_id = 0xFFFF;
-		strcpy(out->name13, "000000");
-		strcpy(out->name8, "000000");
-		strcpy(out->name6, "000000");
-		out->flags = 'R';
-		pthread_mutex_unlock(&db_lock);
-		return 1;
+	int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+	if(sock < 0){
+		syslog(LOG_ERR, "socket: %s", strerror(errno));
+		exit(1);
 	}
 
-	u = NULL;
-	HASH_FIND_STR(users_by_name, line, u);
-	if(!u){
-		pthread_mutex_unlock(&db_lock);
-		return 0;
+	struct sockaddr_un addr = {0};
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, SOCK_PATH, sizeof(addr.sun_path) - 1);
+	if(bind(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0){
+		syslog(LOG_ERR, "bind: %s", strerror(errno));
+		exit(1);
 	}
+	chmod(SOCK_PATH, 0666);
+	listen(sock, 16);
 
-	send(fd, "password:\n", 10, 0);
-	if(recv_line(fd, line, sizeof(line)) <= 0){
-		pthread_mutex_unlock(&db_lock);
-		return 0;
+	syslog(LOG_INFO, "uzenet-identity: listening on %s", SOCK_PATH);
+
+	while(1){
+		struct pollfd pfd = {.fd = sock, .events = POLLIN};
+		if(poll(&pfd, 1, 1000) > 0){
+			int client = accept(sock, NULL, NULL);
+			if(client < 0) continue;
+
+			char pw[7] = {0};
+			int total = 0;
+			int timeout_ms = 3000;
+			struct pollfd cpf = {.fd = client, .events = POLLIN};
+			while(total < 6 && poll(&cpf, 1, timeout_ms) > 0){
+				int r = read(client, pw + total, 6 - total);
+				if(r <= 0) break;
+				total += r;
+			}
+
+			if(total < 6){
+				close(client);
+				continue;
+			}
+
+			struct user *u = NULL;
+			if(!strcmp(pw, "000000")){
+				uint8_t reply[2] = {0xFF, 0xFF};
+				write(client, reply, 2);
+				close(client);
+				continue;
+			}
+			HASH_FIND_STR(users_by_name, pw, u);
+			if(!u){
+				close(client);
+				continue;
+			}
+			uint8_t reply[2] = { u->user_id & 0xFF, u->user_id >> 8 };
+			write(client, reply, 2);
+			close(client);
+		}
 	}
-	char hash[65];
-	SHA256((const unsigned char *)line, strlen(line), (unsigned char *)hash);
-	for(int i = 0; i < 32; ++i)
-		sprintf(hash + i * 2, "%02x", ((unsigned char *)hash)[i]);
-
-	if(strcmp(hash, u->hash) != 0){
-		pthread_mutex_unlock(&db_lock);
-		return 0;
-	}
-
-	out->user_id = u->user_id;
-	strcpy(out->name13, u->name13);
-	strcpy(out->name8, u->name8);
-	strcpy(out->name6, u->name6);
-	out->flags = u->flags;
-
-	pthread_mutex_unlock(&db_lock);
-	return 1;
 }
