@@ -1,12 +1,12 @@
 # Uzenet Service Suite Overview
 
-## 📡 Uzenet Service Suite
+## Uzenet Service Suite
 
 The **Uzenet** system is a suite of minimal yet powerful C-based services that enable multiplayer games, networked utilities, and streaming media for the Uzebox retro game console and other lightweight embedded clients.
 
 ---
 
-## 🧩 Architecture Overview
+## Architecture Overview
 
 ```
 +-------------------------+
@@ -44,14 +44,14 @@ The **Uzenet** system is a suite of minimal yet powerful C-based services that e
 
 ---
 
-## 🔐 Identity and Security
+## Identity and Security
 
 - **uzenet-identity**: Provides centralized authentication for all services. Uses a UNIX socket, SHA-256 password hashes, and optional developer roles.
 - **Developer Upload Auth**: Long-password HTTP auth on port 9461 allows uploading of game-specific sidecar services.
 
 ---
 
-## ⚙️ Installation and Startup
+## Installation and Startup
 
 Each service includes:
 - A `Makefile` with install/remove/status targets
@@ -74,7 +74,7 @@ A universal `administer-users.sh` dialog script is included for user/dev managem
 
 ---
 
-## 🌐 Core Services and Roles
+## Core Services and Roles
 
 | Service            | Description |
 |--------------------|-------------|
@@ -92,7 +92,7 @@ A universal `administer-users.sh` dialog script is included for user/dev managem
 
 ---
 
-## 🧑‍💼 Admin and Developer Flow
+## Admin and Developer Flow
 
 - Founders: Cannot be modified or deleted by anyone else.
 - Admins: Can manage users, but not other admins or founders.
@@ -104,7 +104,7 @@ A universal `administer-users.sh` dialog script is included for user/dev managem
 
 ---
 
-## 📑 Notes
+## Notes
 
 - Each service includes its own `README.md` with details.
 - Service interactions rely on text-based protocols.
